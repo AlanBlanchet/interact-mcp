@@ -64,6 +64,7 @@ def _tracked(fn=None, *, include_result=False):
 
 @mcp.tool()
 async def navigate(url: str, query: str | None = None) -> str:
+    """Navigate to a URL. Returns page content, or vision analysis if query is provided."""
     page = await browser.get_page()
     await page.goto(url)
     _, state = await _capture(page)
@@ -75,12 +76,14 @@ async def navigate(url: str, query: str | None = None) -> str:
 @mcp.tool()
 @_tracked
 async def click(page: Page, selector: str | None = None, x: int | None = None, y: int | None = None):
+    """Click an element by CSS selector or x,y coordinates. Returns what changed on the page."""
     await _execute_action(page, {"type": "click", "selector": selector, "x": x, "y": y})
 
 
 @mcp.tool()
 @_tracked
 async def type_text(page: Page, selector: str, text: str, clear_first: bool = True):
+    """Type text into an input field. Set clear_first=false to append instead of replace."""
     await _execute_action(page, {"type": "type_text", "selector": selector, "text": text, "clear_first": clear_first})
 
 
@@ -90,17 +93,20 @@ SCROLL_DELTA = {"down": (0, 300), "up": (0, -300), "right": (300, 0), "left": (-
 @mcp.tool()
 @_tracked
 async def scroll(page: Page, direction: Literal["down", "up", "right", "left"] = "down", amount: int = 3):
+    """Scroll the page in a direction. Returns what became visible after scrolling."""
     await _execute_action(page, {"type": "scroll", "direction": direction, "amount": amount})
 
 
 @mcp.tool()
 @_tracked
 async def drag(page: Page, from_x: int, from_y: int, to_x: int, to_y: int):
+    """Mouse drag between two coordinates. Returns what changed on the page."""
     await _execute_action(page, {"type": "drag", "from_x": from_x, "from_y": from_y, "to_x": to_x, "to_y": to_y})
 
 
 @mcp.tool()
 async def screenshot(query: str | None = None) -> str:
+    """Capture the current page. Returns vision analysis if query is provided, otherwise page text."""
     _, state = await _capture()
     return await analyze_screenshot(state, config, query)
 
@@ -108,11 +114,13 @@ async def screenshot(query: str | None = None) -> str:
 @mcp.tool()
 @_tracked(include_result=True)
 async def evaluate_js(page: Page, script: str):
+    """Run JavaScript on the page. Returns the script result and what changed."""
     return await _execute_action(page, {"type": "evaluate_js", "script": script})
 
 
 @mcp.tool()
 async def get_page_state() -> str:
+    """Get current page URL, title, accessibility tree, focused element, and visible text."""
     _, state = await _capture()
     return (
         f"URL: {state.url}\n"
