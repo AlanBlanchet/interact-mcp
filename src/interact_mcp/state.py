@@ -25,7 +25,9 @@ class PageState(BaseModel):
     focused_element: str | None
 
     @classmethod
-    async def capture(cls, page: Page, dump_dir: Path | None = None, scope: str | None = None):
+    async def capture(
+        cls, page: Page, dump_dir: Path | None = None, scope: str | None = None
+    ):
         url = page.url
         title = await page.title()
 
