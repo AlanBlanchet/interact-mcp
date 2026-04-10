@@ -24,6 +24,9 @@ class PageState(BaseModel):
     visible_text: str
     focused_element: str | None
 
+    def text_summary(self) -> str:
+        return f"{self.title}\n\n{self.visible_text}"
+
     @classmethod
     async def capture(
         cls, page: Page, dump_dir: Path | None = None, scope: str | None = None

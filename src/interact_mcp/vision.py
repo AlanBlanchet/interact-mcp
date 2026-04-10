@@ -1,7 +1,7 @@
 import litellm
 
 from interact_mcp.config import Config
-from interact_mcp.state import PageState, StateChange
+from interact_mcp.state import PageState
 
 
 def _image_url(base64_png: str) -> dict:
@@ -47,20 +47,9 @@ async def analyze_images(
     return await _vision_completion(_build_messages(content, prompt), config)
 
 
-async def analyze_change(change: StateChange, config: Config, prompt: str | None = None) -> str:
-    if not config.vision_api_key:
-        return change.description
-    return await analyze_images(
-        [change.before.screenshot_base64, change.after.screenshot_base64],
-        f"Text diff:\n{change.description}\n\nBefore screenshot -> After screenshot:",
-        config,
-        prompt,
-    )
-
-
 async def analyze_screenshot(state: PageState, config: Config, prompt: str | None = None) -> str:
     if not config.vision_api_key:
-        return f"{state.title}\n\n{state.visible_text}"
+        return state.text_summary()
     return await analyze_images(
         [state.screenshot_base64],
         f"Page: {state.title} ({state.url})",

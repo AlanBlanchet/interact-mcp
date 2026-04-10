@@ -140,29 +140,31 @@ The primary interaction tool. Execute one or more actions and get per-step feedb
 
 **Actions** (mutate the page — each gets a before/after diff):
 
-| Type | Fields | Optional |
-|---|---|---|
-| `click` | `selector` OR `x`+`y` | `wait` |
-| `type_text` | `selector`, `text` | `clear_first` (default: true), `wait` |
-| `scroll` | — | `direction` (default: down), `amount` (default: 3), `wait` |
-| `drag` | `from_x`, `from_y`, `to_x`, `to_y` | `wait` |
-| `navigate` | `url` | `wait` |
-| `evaluate_js` | `script` | `wait` |
+| Type          | Fields                             | Optional                                                   |
+| ------------- | ---------------------------------- | ---------------------------------------------------------- |
+| `click`       | `selector` OR `x`+`y`              | `wait`                                                     |
+| `type_text`   | `selector`, `text`                 | `clear_first` (default: true), `wait`                      |
+| `scroll`      | —                                  | `direction` (default: down), `amount` (default: 3), `wait` |
+| `drag`        | `from_x`, `from_y`, `to_x`, `to_y` | `wait`                                                     |
+| `navigate`    | `url`                              | `wait`                                                     |
+| `evaluate_js` | `script`                           | `wait`                                                     |
 
 **Observations** (read current state, no diff):
 
-| Type | Fields | Optional |
-|---|---|---|
-| `screenshot` | — | `scope`, `query` |
-| `wait_for` | `selector` | `state` (visible/hidden/attached/detached), `timeout` (ms) |
-| `list_clickable` | — | `scope` |
+| Type             | Fields     | Optional                                                   |
+| ---------------- | ---------- | ---------------------------------------------------------- |
+| `screenshot`     | —          | `scope`, `query`                                           |
+| `wait_for`       | `selector` | `state` (visible/hidden/attached/detached), `timeout` (ms) |
+| `list_clickable` | —          | `scope`                                                    |
 
 Single action:
+
 ```
 run_actions(actions=[{"type": "click", "selector": "button[type=submit]", "wait": "networkidle"}])
 ```
 
 Multi-step with mixed actions and observations:
+
 ```
 run_actions(actions=[
   {"type": "navigate", "url": "http://localhost:8000/login"},
