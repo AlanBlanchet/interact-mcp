@@ -122,26 +122,37 @@ Or with explicit env:
 
 The browser session is **persistent** across all tool calls. Navigate once, then click, type, scroll — each call picks up where the last left off. No session management needed.
 
-### `navigate(url, query?)`
+### Common parameters
+
+Most browser tools accept these optional params:
+
+| Param | Type | Description |
+|---|---|---|
+| `query` | string | Prompt sent to the vision model alongside screenshots. Controls what the VLM focuses on. |
+| `scope` | string | CSS selector to narrow the screenshot and text extraction to a specific element instead of the full page. |
+| `wait` | string | Wait condition after the action, before capturing state. Values: `networkidle`, `domcontentloaded`, `load`, or any CSS selector (waits for it to be visible). |
+
+### `navigate(url, query?, scope?, wait?)`
 
 Go to a URL. Returns page title and visible text. If `query` is provided and vision is configured, the page is analyzed with that query instead.
 
 ```
 navigate("https://github.com")
-navigate("https://github.com", query="What is the main call-to-action on this page?")
+navigate("https://github.com", query="What is the main call-to-action?")
+navigate("https://myapp.com", wait="networkidle", scope="#main-content")
 ```
 
-### `click(selector?, x?, y?, query?)`
+### `click(selector?, x?, y?, query?, scope?, wait?)`
 
-Click an element by CSS selector or by coordinates. Returns a summary of what changed after the click (new modal? navigation? error message?).
+Click an element by CSS selector or by coordinates. Returns a summary of what changed after the click.
 
 ```
 click(selector="button[type=submit]")
-click(x=640, y=360)
-click(selector="#login-btn", query="Did login succeed or was there an error?")
+click(selector="button[type=submit]", wait="networkidle")
+click(selector="#login-btn", query="Did login succeed?", scope=".auth-panel")
 ```
 
-### `type_text(selector, text, clear_first?, query?)`
+### `type_text(selector, text, clear_first?, query?, scope?, wait?)`
 
 Type into an input field. `clear_first=true` replaces existing content (default). Returns what changed.
 
@@ -150,16 +161,16 @@ type_text(selector="input[name=email]", text="user@example.com")
 type_text(selector="#search", text="interact mcp", clear_first=False)
 ```
 
-### `scroll(direction?, amount?, query?)`
+### `scroll(direction?, amount?, query?, scope?, wait?)`
 
 Scroll the page. `direction` is `down`/`up`/`left`/`right`, `amount` is number of scroll increments (default 3). Returns what became visible.
 
 ```
 scroll()
-scroll(direction="up", amount=5)
+scroll(direction="up", amount=5, scope=".results-panel")
 ```
 
-### `drag(from_x, from_y, to_x, to_y, query?)`
+### `drag(from_x, from_y, to_x, to_y, query?, scope?, wait?)`
 
 Mouse drag from one coordinate to another. Returns what changed.
 
@@ -167,30 +178,54 @@ Mouse drag from one coordinate to another. Returns what changed.
 drag(from_x=100, from_y=200, to_x=300, to_y=200)
 ```
 
-### `screenshot(query?)`
+### `screenshot(query?, scope?)`
 
-Capture the current page. Without vision configured, returns title + visible text. With vision + query, returns a description of what's visible.
+Capture the current page or a scoped element. Returns vision analysis if query is provided.
 
 ```
 screenshot()
 screenshot(query="Are there any error messages visible?")
+screenshot(scope=".sidebar", query="What navigation items are available?")
 ```
 
-### `evaluate_js(script, query?)`
+### `evaluate_js(script, query?, scope?, wait?)`
 
 Run JavaScript on the page. Returns the script result plus a summary of any page changes.
 
 ```
 evaluate_js(script="return document.querySelectorAll('a').length")
-evaluate_js(script="window.scrollTo(0, document.body.scrollHeight)")
+evaluate_js(script="window.scrollTo(0, document.body.scrollHeight)", wait="networkidle")
 ```
 
-### `get_page_state()`
+### `get_page_state(scope?)`
 
-Observe the current page without performing any action. Returns URL, title, focused element, accessibility tree, and visible text. Use this to orient before acting.
+Observe the current page or a scoped element. Returns URL, title, focused element, accessibility tree, and visible text.
 
 ```
 get_page_state()
+get_page_state(scope="#hero-table")
+```
+
+### `wait_for(selector, state?, timeout?, query?, scope?)`
+
+Wait for an element to reach a specific state. Useful after actions that trigger async loading.
+
+- `state`: `visible` (default), `hidden`, `attached`, `detached`
+- `timeout`: milliseconds (default 10000)
+
+```
+wait_for(selector=".results-table")
+wait_for(selector=".loading-spinner", state="hidden")
+wait_for(selector="#success-message", timeout=5000, query="What does the success message say?")
+```
+
+### `list_clickable(scope?)`
+
+List all interactive elements (links, buttons, inputs, selects) with their CSS selectors and text. Use this to discover what actions are available.
+
+```
+list_clickable()
+list_clickable(scope=".navigation")
 ```
 
 ### `run_actions(actions, query?)`
@@ -216,6 +251,8 @@ Action types:
 | `scroll`      | —                                  | `direction` (default: down), `amount` (default: 3) |
 | `drag`        | `from_x`, `from_y`, `to_x`, `to_y` | —                                                  |
 | `evaluate_js` | `script`                           | —                                                  |
+
+All action types also support an optional `wait` key for per-step wait conditions.
 
 ---
 
@@ -259,12 +296,21 @@ Each tool returns enough context to decide the next action. Use `get_page_state(
 ### Typical workflow: interact with a local server
 
 ```
-navigate("http://localhost:8000")
-get_page_state()
-click(selector="nav a[href='/settings']")
+navigate("http://localhost:8000", wait="networkidle")
+list_clickable()
+click(selector="nav a[href='/settings']", wait="networkidle")
 type_text(selector="#api-key", text="sk-test-123")
-click(selector="button[type=submit]", query="Did the settings save successfully?")
-screenshot(query="What does the settings page look like now?")
+click(selector="button[type=submit]", wait="networkidle", query="Did the settings save?")
+screenshot(scope=".settings-form", query="What does the form look like now?")
+```
+
+### Scoped inspection
+
+```
+navigate("http://localhost:8000")
+screenshot(scope="#hero-table", query="Are there any alignment issues in the table?")
+get_page_state(scope=".sidebar")
+list_clickable(scope=".toolbar")
 ```
 
 ### Batch workflow: login + navigate

@@ -25,24 +25,34 @@ class PageState(BaseModel):
     focused_element: str | None
 
     @classmethod
-    async def capture(cls, page: Page, dump_dir: Path | None = None):
+    async def capture(cls, page: Page, dump_dir: Path | None = None, scope: str | None = None):
         url = page.url
         title = await page.title()
 
+        target = page
+        if scope:
+            target = page.locator(scope).first
+
         try:
-            snapshot = await page.accessibility.snapshot()
-            accessibility_tree = json.dumps(snapshot, indent=2) if snapshot else ""
+            if scope:
+                accessibility_tree = await target.aria_snapshot()
+            else:
+                snapshot = await page.accessibility.snapshot()
+                accessibility_tree = json.dumps(snapshot, indent=2) if snapshot else ""
         except Exception:
             accessibility_tree = ""
 
-        screenshot_bytes = await page.screenshot(type="png")
+        screenshot_bytes = await target.screenshot(type="png")
         screenshot_base64 = base64.b64encode(screenshot_bytes).decode()
 
         if dump_dir is not None:
             dump_screenshot(screenshot_bytes, urlparse(url).netloc, dump_dir)
 
         try:
-            visible_text = (await page.inner_text("body"))[:2000]
+            if scope:
+                visible_text = (await target.inner_text())[:2000]
+            else:
+                visible_text = (await page.inner_text("body"))[:2000]
         except Exception:
             visible_text = ""
 

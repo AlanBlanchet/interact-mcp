@@ -28,10 +28,19 @@ async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
 mcp = FastMCP("interact-mcp", lifespan=_lifespan)
 
 
-async def _capture(page: Page | None = None):
+async def _capture(page: Page | None = None, scope: str | None = None):
     if page is None:
         page = await browser.get_page()
-    return page, await PageState.capture(page, config.screenshot_dump_dir)
+    return page, await PageState.capture(page, config.screenshot_dump_dir, scope)
+
+
+async def _wait(page: Page, condition: str | None):
+    if condition is None:
+        return
+    if condition in ("networkidle", "domcontentloaded", "load"):
+        await page.wait_for_load_state(condition)
+    else:
+        await page.wait_for_selector(condition, state="visible", timeout=10000)
 
 
 def _tracked(fn=None, *, include_result=False):
@@ -39,9 +48,12 @@ def _tracked(fn=None, *, include_result=False):
         @functools.wraps(fn)
         async def wrapper(**kwargs):
             query = kwargs.pop("query", None)
-            page, before = await _capture()
+            scope = kwargs.pop("scope", None)
+            wait = kwargs.pop("wait", None)
+            page, before = await _capture(scope=scope)
             result = await fn(page, **kwargs)
-            _, after = await _capture(page)
+            await _wait(page, wait)
+            _, after = await _capture(page, scope)
             change = StateChange.compute(before, after)
             summary = await analyze_change(change, config, query)
             if include_result:
@@ -50,10 +62,10 @@ def _tracked(fn=None, *, include_result=False):
 
         sig = inspect.signature(fn)
         params = [p for n, p in sig.parameters.items() if n != "page"]
-        query_param = inspect.Parameter(
-            "query", inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None, annotation=str | None
-        )
-        params.append(query_param)
+        for name in ("query", "scope", "wait"):
+            params.append(inspect.Parameter(
+                name, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None, annotation=str | None
+            ))
         wrapper.__signature__ = sig.replace(parameters=params)
         return wrapper
 
@@ -63,11 +75,12 @@ def _tracked(fn=None, *, include_result=False):
 
 
 @mcp.tool()
-async def navigate(url: str, query: str | None = None) -> str:
-    """Navigate to a URL. Returns page content, or vision analysis if query is provided."""
+async def navigate(url: str, query: str | None = None, scope: str | None = None, wait: str | None = None) -> str:
+    """Navigate to a URL. Returns page content, or vision analysis if query is provided. Use scope to focus on a specific element, wait to wait for a condition after loading."""
     page = await browser.get_page()
     await page.goto(url)
-    _, state = await _capture(page)
+    await _wait(page, wait)
+    _, state = await _capture(page, scope)
     if query and config.vision_api_key:
         return await analyze_screenshot(state, config, query)
     return f"{state.title}\n\n{state.visible_text}"
@@ -105,9 +118,9 @@ async def drag(page: Page, from_x: int, from_y: int, to_x: int, to_y: int):
 
 
 @mcp.tool()
-async def screenshot(query: str | None = None) -> str:
-    """Capture the current page. Returns vision analysis if query is provided, otherwise page text."""
-    _, state = await _capture()
+async def screenshot(query: str | None = None, scope: str | None = None) -> str:
+    """Capture the current page or a scoped element. Returns vision analysis if query is provided."""
+    _, state = await _capture(scope=scope)
     return await analyze_screenshot(state, config, query)
 
 
@@ -119,9 +132,9 @@ async def evaluate_js(page: Page, script: str):
 
 
 @mcp.tool()
-async def get_page_state() -> str:
+async def get_page_state(scope: str | None = None) -> str:
     """Get current page URL, title, accessibility tree, focused element, and visible text."""
-    _, state = await _capture()
+    _, state = await _capture(scope=scope)
     return (
         f"URL: {state.url}\n"
         f"Title: {state.title}\n"
@@ -163,13 +176,13 @@ async def _execute_action(page: Page, action: dict):
 
 
 @mcp.tool()
-async def run_actions(actions: list[dict], query: str | None = None) -> str:
+async def run_actions(actions: list[dict], query: str | None = None, wait: str | None = None) -> str:
     """Execute multiple browser actions in sequence.
 
     Each action dict has a 'type' key: navigate, click, type_text, scroll, drag, evaluate_js.
     navigate: url. click: selector OR x+y coordinates. type_text: selector, text, clear_first.
     scroll: direction (down/up/right/left), amount. drag: from_x, from_y, to_x, to_y.
-    evaluate_js: script.
+    evaluate_js: script. Each action can include a 'wait' key for post-action wait condition.
 
     Returns per-step change summaries plus a final state description.
     If query is provided and vision is configured, the final state is analyzed with that prompt.
@@ -182,6 +195,9 @@ async def run_actions(actions: list[dict], query: str | None = None) -> str:
         action_type = action.get("type", "")
         _, before = await _capture(page)
         result = await _execute_action(page, action)
+        action_wait = action.get("wait")
+        if action_wait:
+            await _wait(page, action_wait)
         _, final = await _capture(page)
         change = StateChange.compute(before, final)
         report = f"Step {i + 1} ({action_type}): {change.description}"
@@ -191,12 +207,73 @@ async def run_actions(actions: list[dict], query: str | None = None) -> str:
 
     if final is None:
         _, final = await _capture(page)
+    elif wait:
+        await _wait(page, wait)
+        _, final = await _capture(page)
     if query:
         final_summary = await analyze_screenshot(final, config, query)
     else:
         final_summary = f"{final.title} — {final.url}\n{final.visible_text[:500]}"
 
     return "\n".join(step_reports) + f"\n\n---\nFinal state: {final_summary}"
+
+
+@mcp.tool()
+async def wait_for(selector: str, state: Literal["visible", "hidden", "attached", "detached"] = "visible", timeout: int = 10000, query: str | None = None, scope: str | None = None) -> str:
+    """Wait for an element to reach a state (visible, hidden, attached, detached). Returns page state after waiting."""
+    page = await browser.get_page()
+    await page.wait_for_selector(selector, state=state, timeout=timeout)
+    _, page_state = await _capture(page, scope)
+    if query and config.vision_api_key:
+        return await analyze_screenshot(page_state, config, query)
+    return f"Element '{selector}' is now {state}.\n\n{page_state.visible_text[:500]}"
+
+
+@mcp.tool()
+async def list_clickable(scope: str | None = None) -> str:
+    """List all interactive elements (links, buttons, inputs, selects) with CSS selectors and text."""
+    page = await browser.get_page()
+
+    elements = await page.evaluate("""(scopeSelector) => {
+        const root = scopeSelector ? document.querySelector(scopeSelector) : document;
+        if (!root) return [];
+        const items = root.querySelectorAll('a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [onclick]');
+        return Array.from(items).slice(0, 100).map((el, i) => {
+            const tag = el.tagName.toLowerCase();
+            const text = (el.textContent || el.value || el.placeholder || el.getAttribute('aria-label') || '').trim().slice(0, 80);
+            const type = el.type || '';
+            const href = el.href || '';
+
+            let selector = '';
+            if (el.id) selector = '#' + el.id;
+            else if (el.getAttribute('data-testid')) selector = `[data-testid="${el.getAttribute('data-testid')}"]`;
+            else if (el.name) selector = `${tag}[name="${el.name}"]`;
+            else if (text && tag === 'button') selector = `button:has-text("${text.slice(0, 30)}")`;
+            else if (text && tag === 'a') selector = `a:has-text("${text.slice(0, 30)}")`;
+            else {
+                const classes = Array.from(el.classList).slice(0, 2).join('.');
+                selector = classes ? `${tag}.${classes}` : `${tag}:nth-of-type(${i + 1})`;
+            }
+
+            return { tag, selector, text, type, href };
+        });
+    }""", scope)
+
+    if not elements:
+        return "No interactive elements found." + (f" (scoped to '{scope}')" if scope else "")
+
+    lines = []
+    for el in elements:
+        parts = [el["tag"]]
+        if el["type"]:
+            parts.append(f'type={el["type"]}')
+        if el["text"]:
+            parts.append(f'"{ el["text"] }"')
+        if el["href"]:
+            parts.append(f'-> {el["href"][:60]}')
+        lines.append(f'  {el["selector"]}  [{" | ".join(parts)}]')
+
+    return "\n".join(lines)
 
 
 @mcp.tool()
