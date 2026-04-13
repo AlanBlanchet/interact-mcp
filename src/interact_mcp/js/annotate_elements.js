@@ -1,0 +1,16 @@
+
+    (scopeSelector) => {
+        const root = scopeSelector ? document.querySelector(scopeSelector) : document.body;
+        const tags = 'a,button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=combobox],[role=textbox]';
+        return Array.from((root || document.body).querySelectorAll(tags))
+            .filter(el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 4 && r.height > 4;
+            })
+            .slice(0, 50)
+            .map(el => {
+                const r = el.getBoundingClientRect();
+                const name = (el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '').trim().replace(/\s+/g,' ').slice(0, 60);
+                return { tag: el.tagName.toLowerCase(), name, x: r.x, y: r.y, width: r.width, height: r.height };
+            });
+    }

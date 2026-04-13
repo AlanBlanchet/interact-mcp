@@ -1,7 +1,13 @@
 from typing import Annotated, ClassVar, Literal
+from pathlib import Path
 
+import httpx
 from pydantic import BaseModel, Field, field_validator, model_validator
 from playwright.async_api import Page
+
+from interact_mcp.state import aria_locator
+
+_LIST_CLICKABLE_JS = (Path(__file__).parent / "js" / "list_clickable.js").read_text()
 
 
 class Action(BaseModel):
@@ -13,36 +19,51 @@ class ObservationAction(Action):
     mutates: ClassVar[bool] = False
 
 
-class ClickAction(Action):
-    type: Literal["click"] = "click"
+class TargetedAction(Action):
+    ref: str | None = None
     selector: str | None = None
+
+    @model_validator(mode="after")
+    def _require_target(self):
+        if not self.ref and not self.selector:
+            raise ValueError("Provide ref or selector")
+        return self
+
+    def _locator(self, page: Page):
+        return page.locator(aria_locator(self.ref)) if self.ref else page.locator(self.selector)
+
+
+class ClickAction(TargetedAction):
+    type: Literal["click"] = "click"
     x: int | None = None
     y: int | None = None
 
     @model_validator(mode="after")
     def _require_target(self):
-        if not self.selector and (self.x is None or self.y is None):
-            raise ValueError("Provide selector or both x and y")
+        if not self.ref and not self.selector and (self.x is None or self.y is None):
+            raise ValueError("Provide ref, selector, or both x and y")
         return self
 
     async def execute(self, page: Page):
-        if self.selector:
+        if self.ref:
+            await self._locator(page).click()
+        elif self.selector:
             await page.click(self.selector)
         else:
             await page.mouse.click(self.x, self.y)
 
 
-class TypeTextAction(Action):
+class TypeTextAction(TargetedAction):
     type: Literal["type_text"] = "type_text"
-    selector: str
     text: str
     clear_first: bool = True
 
     async def execute(self, page: Page):
+        target = self._locator(page)
         if self.clear_first:
-            await page.fill(self.selector, self.text)
+            await target.fill(self.text)
         else:
-            await page.type(self.selector, self.text)
+            await target.type(self.text)
 
 
 class ScrollAction(Action):
@@ -69,17 +90,42 @@ class ScrollAction(Action):
             await page.mouse.wheel(dx, dy)
 
 
+async def _ref_center(page: Page, ref: str) -> tuple[float, float]:
+    box = await page.locator(aria_locator(ref)).bounding_box()
+    return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+
+
 class DragAction(Action):
     type: Literal["drag"] = "drag"
-    from_x: int
-    from_y: int
-    to_x: int
-    to_y: int
+    from_x: int | None = None
+    from_y: int | None = None
+    to_x: int | None = None
+    to_y: int | None = None
+    from_ref: str | None = None
+    to_ref: str | None = None
+
+    @model_validator(mode="after")
+    def _require_targets(self):
+        has_from = self.from_ref or (self.from_x is not None and self.from_y is not None)
+        has_to = self.to_ref or (self.to_x is not None and self.to_y is not None)
+        if not has_from or not has_to:
+            raise ValueError("Provide from_ref or from_x+from_y, and to_ref or to_x+to_y")
+        return self
 
     async def execute(self, page: Page):
-        await page.mouse.move(self.from_x, self.from_y)
+        if self.from_ref:
+            fx, fy = await _ref_center(page, self.from_ref)
+        else:
+            fx, fy = self.from_x, self.from_y
+
+        if self.to_ref:
+            tx, ty = await _ref_center(page, self.to_ref)
+        else:
+            tx, ty = self.to_x, self.to_y
+
+        await page.mouse.move(fx, fy)
         await page.mouse.down()
-        await page.mouse.move(self.to_x, self.to_y)
+        await page.mouse.move(tx, ty)
         await page.mouse.up()
 
 
@@ -131,30 +177,7 @@ class ListClickableAction(ObservationAction):
 
     async def execute(self, page: Page):
         elements = await page.evaluate(
-            """(scopeSelector) => {
-            const root = scopeSelector ? document.querySelector(scopeSelector) : document;
-            if (!root) return [];
-            const items = root.querySelectorAll('a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [onclick]');
-            return Array.from(items).slice(0, 100).map((el, i) => {
-                const tag = el.tagName.toLowerCase();
-                const text = (el.textContent || el.value || el.placeholder || el.getAttribute('aria-label') || '').trim().slice(0, 80);
-                const type = el.type || '';
-                const href = el.href || '';
-
-                let selector = '';
-                if (el.id) selector = '#' + el.id;
-                else if (el.getAttribute('data-testid')) selector = `[data-testid="${el.getAttribute('data-testid')}"]`;
-                else if (el.name) selector = `${tag}[name="${el.name}"]`;
-                else if (text && tag === 'button') selector = `button:has-text("${text.slice(0, 30)}")`;
-                else if (text && tag === 'a') selector = `a:has-text("${text.slice(0, 30)}")`;
-                else {
-                    const classes = Array.from(el.classList).slice(0, 2).join('.');
-                    selector = classes ? `${tag}.${classes}` : `${tag}:nth-of-type(${i + 1})`;
-                }
-
-                return { tag, selector, text, type, href };
-            });
-        }""",
+            _LIST_CLICKABLE_JS,
             self.scope,
         )
 
@@ -177,6 +200,63 @@ class ListClickableAction(ObservationAction):
         return "\n".join(lines)
 
 
+class UploadFileAction(TargetedAction):
+    type: Literal["upload_file"] = "upload_file"
+    path: str
+
+    async def execute(self, page: Page):
+        target = self._locator(page)
+        await target.set_input_files(self.path)
+
+
+class AnnotateAction(ObservationAction):
+    type: Literal["annotate"] = "annotate"
+    scope: str | None = None
+    query: str | None = None
+
+
+class ClickElementAction(Action):
+    type: Literal["click_element"] = "click_element"
+    element: int
+
+    async def execute(self, page: Page):
+        raise NotImplementedError("server resolves click_element using stored element map")
+
+
+class NewTabAction(ObservationAction):
+    type: Literal["new_tab"] = "new_tab"
+    url: str | None = None
+
+
+class SwitchTabAction(ObservationAction):
+    type: Literal["switch_tab"] = "switch_tab"
+    index: int = 0
+
+
+class CloseTabAction(ObservationAction):
+    type: Literal["close_tab"] = "close_tab"
+    index: int | None = None
+
+
+class HttpRequestAction(ObservationAction):
+    type: Literal["http_request"] = "http_request"
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET"
+    url: str
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str | None = None
+
+    async def execute(self, page: Page):
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                self.method,
+                self.url,
+                headers=self.headers,
+                content=self.body,
+                timeout=30.0,
+            )
+            return f"{response.status_code} {response.reason_phrase}\n{response.text[:2000]}"
+
+
 AnyAction = Annotated[
     ClickAction
     | TypeTextAction
@@ -186,6 +266,13 @@ AnyAction = Annotated[
     | EvaluateJsAction
     | ScreenshotAction
     | WaitForAction
-    | ListClickableAction,
+    | ListClickableAction
+    | UploadFileAction
+    | NewTabAction
+    | SwitchTabAction
+    | CloseTabAction
+    | HttpRequestAction
+    | AnnotateAction
+    | ClickElementAction,
     Field(discriminator="type"),
 ]

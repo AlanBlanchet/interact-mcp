@@ -1,6 +1,17 @@
-import pytest
+import io
 
-from interact_mcp.state import PageState, StateChange, dump_screenshot
+import pytest
+from PIL import Image
+
+from interact_mcp.state import (
+    InteractiveElement,
+    PageState,
+    StateChange,
+    annotate_screenshot,
+    dump_media,
+    format_element_list,
+    match_refs,
+)
 
 
 def _make_state(**overrides) -> PageState:
@@ -49,10 +60,93 @@ def test_multiple_changes():
     assert "new" in change.description
 
 
-def test_dump_screenshot(tmp_path):
+def test_dump_media(tmp_path):
     data = b"\x89PNG fake screenshot data"
-    dump_screenshot(data, "example.com", tmp_path / "shots")
+    dump_media(data, "example.com", tmp_path / "shots")
     files = list((tmp_path / "shots").glob("*.png"))
     assert len(files) == 1
     assert files[0].read_bytes() == data
     assert "example_com" in files[0].name
+
+
+def _make_element(index: int, ref: str | None = None, **kw) -> InteractiveElement:
+    defaults = dict(role="button", name=f"Element {index}", x=10.0, y=20.0, width=80.0, height=40.0)
+    return InteractiveElement(index=index, ref=ref, **(defaults | kw))
+
+
+def _make_png(width: int = 200, height: int = 100) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), color=(240, 240, 240)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# --- annotate_screenshot ---
+
+
+def test_annotate_screenshot_produces_valid_png():
+    elements = [_make_element(1, x=5, y=5, width=30, height=20),
+                _make_element(2, x=50, y=10, width=40, height=30)]
+    result = annotate_screenshot(_make_png(), elements)
+    img = Image.open(io.BytesIO(result))
+    assert img.format == "PNG"
+    assert img.size == (200, 100)
+
+
+def test_annotate_screenshot_no_elements():
+    raw = _make_png()
+    result = annotate_screenshot(raw, [])
+    img = Image.open(io.BytesIO(result))
+    assert img.size == (200, 100)
+
+
+# --- format_element_list ---
+
+
+def test_format_element_list():
+    elements = [_make_element(1, ref="e10"), _make_element(2)]
+    text = format_element_list(elements)
+    assert "[1]" in text
+    assert "[2]" in text
+    assert "ref=e10" in text
+    assert "ref=None" in text
+    assert "button" in text
+
+
+# --- match_refs ---
+
+
+def test_match_refs_pairs_by_name():
+    snapshot = '- button "Save" [ref=e1]\n- link "Home" [ref=e2]'
+    raw_boxes = [
+        {"tag": "button", "name": "Save", "x": 0, "y": 0, "width": 60, "height": 30},
+        {"tag": "a", "name": "Home", "x": 100, "y": 0, "width": 50, "height": 30},
+    ]
+    elements = match_refs(snapshot, raw_boxes)
+    assert len(elements) == 2
+    assert elements[0].ref == "e1"
+    assert elements[0].role == "button"
+    assert elements[0].index == 1
+    assert elements[1].ref == "e2"
+    assert elements[1].index == 2
+
+
+def test_match_refs_duplicate_names():
+    snapshot = '- button "Close" [ref=e5]\n- button "Close" [ref=e6]'
+    raw_boxes = [
+        {"tag": "button", "name": "Close", "x": 0, "y": 0, "width": 30, "height": 30},
+        {"tag": "button", "name": "Close", "x": 40, "y": 0, "width": 30, "height": 30},
+    ]
+    elements = match_refs(snapshot, raw_boxes)
+    assert elements[0].ref == "e5"
+    assert elements[1].ref == "e6"
+
+
+def test_match_refs_unmatched_box_gets_none_ref():
+    snapshot = '- button "Save" [ref=e1]'
+    raw_boxes = [
+        {"tag": "button", "name": "Save", "x": 0, "y": 0, "width": 60, "height": 30},
+        {"tag": "input", "name": "Email", "x": 0, "y": 40, "width": 100, "height": 30},
+    ]
+    elements = match_refs(snapshot, raw_boxes)
+    assert elements[0].ref == "e1"
+    assert elements[1].ref is None

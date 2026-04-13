@@ -1,5 +1,7 @@
 import re
 import subprocess
+import tempfile
+from pathlib import Path
 
 from pydantic import BaseModel, computed_field
 
@@ -56,6 +58,39 @@ def find_window(title: str, windows: list[DesktopWindow] | None = None) -> Deskt
 
 def capture_window(wid: int) -> bytes:
     return subprocess.check_output(["maim", "-u", "-i", str(wid)], timeout=10)
+
+
+def capture_window_video(wid: int, duration: float = 3.0, fps: int = 10) -> bytes:
+    geom = subprocess.check_output(
+        ["xdotool", "getwindowgeometry", "--shell", str(wid)],
+        text=True, timeout=5,
+    )
+    props = {}
+    for line in geom.strip().splitlines():
+        k, v = line.split("=")
+        props[k] = v
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+        output_path = Path(f.name)
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-f", "x11grab",
+                "-video_size", f"{props['WIDTH']}x{props['HEIGHT']}",
+                "-framerate", str(fps),
+                "-i", f":0+{props['X']},{props['Y']}",
+                "-c:v", "libx264", "-preset", "ultrafast",
+                "-t", str(duration),
+                "-pix_fmt", "yuv420p",
+                str(output_path),
+            ],
+            check=True, capture_output=True, timeout=duration + 10,
+        )
+        return output_path.read_bytes()
+    finally:
+        output_path.unlink(missing_ok=True)
 
 
 def window_listing(windows: list[DesktopWindow]) -> str:
