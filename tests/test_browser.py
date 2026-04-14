@@ -1,6 +1,6 @@
 from interact_mcp.browser import BrowserManager
 from interact_mcp.config import Config
-from interact_mcp.state import _ARIA_REF_RE, InteractiveElement
+from interact_mcp.state import InteractiveElement, ref_locator
 
 
 def _el(index: int, ref: str | None = None) -> InteractiveElement:
@@ -64,7 +64,7 @@ def test_element_playwright_ref():
     el = InteractiveElement(
         index=1, ref="e42", role="button", name="x", x=0, y=0, width=10, height=10
     )
-    assert el.playwright_ref == "aria-ref:e42"
+    assert el.playwright_ref == '[data-interact-ref="e42"]'
 
 
 def test_element_center_coords():
@@ -75,37 +75,8 @@ def test_element_center_coords():
     assert el.center_y == 40
 
 
-# --- ARIA ref regex ---
+# --- ref_locator ---
 
 
-def test_aria_ref_re_named_element():
-    snap = '- button "Submit" [ref=e42]'
-    assert _ARIA_REF_RE.findall(snap) == [("Submit", "e42")]
-
-
-def test_aria_ref_re_unnamed_element():
-    snap = "- button [ref=e43]"
-    assert _ARIA_REF_RE.findall(snap) == [("", "e43")]
-
-
-def test_aria_ref_re_element_with_extra_attrs():
-    snap = "- checkbox [ref=e44, checked]"
-    assert _ARIA_REF_RE.findall(snap) == [("", "e44")]
-
-
-def test_aria_ref_re_duplicate_names():
-    snap = '- button "Close" [ref=e1]\n- button "Close" [ref=e2]'
-    matches = _ARIA_REF_RE.findall(snap)
-    assert matches == [("Close", "e1"), ("Close", "e2")]
-
-
-def test_aria_ref_re_mixed():
-    snap = '- button "Submit" [ref=e1]\n- button [ref=e2]\n- textbox "Email" [ref=e3]'
-    matches = _ARIA_REF_RE.findall(snap)
-    assert matches == [("Submit", "e1"), ("", "e2"), ("Email", "e3")]
-
-
-def test_aria_ref_re_hyphenated_role():
-    snap = '- menu-item "Open" [ref=e5]'
-    matches = _ARIA_REF_RE.findall(snap)
-    assert matches == [("Open", "e5")]
+def test_ref_locator():
+    assert ref_locator("e5") == '[data-interact-ref="e5"]'

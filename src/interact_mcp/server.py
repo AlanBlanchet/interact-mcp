@@ -25,7 +25,6 @@ from interact_mcp.state import (
     annotate_screenshot,
     dump_media,
     format_element_list,
-    match_refs,
 )
 from interact_mcp.vision import MediaItem, analyze_media, analyze_screenshot
 
@@ -69,24 +68,37 @@ async def _annotate_page(
     mgr: BrowserManager, tab: int = 0, scope: str | None = None
 ) -> tuple[bytes, list[InteractiveElement]]:
     page = await mgr.get_page(tab)
-    target = page.locator(scope).first if scope else page.locator("body")
-
-    aria_snapshot = await target.aria_snapshot()
     raw_boxes = await page.evaluate(_ANNOTATE_JS, scope)
-    elements = match_refs(aria_snapshot, raw_boxes)
-
+    elements = [
+        InteractiveElement(
+            index=i + 1,
+            ref=raw["ref"],
+            role=raw["tag"],
+            name=raw["name"],
+            x=raw["x"],
+            y=raw["y"],
+            width=raw["width"],
+            height=raw["height"],
+        )
+        for i, raw in enumerate(raw_boxes)
+    ]
     screenshot_bytes = await page.screenshot(type="png")
     return annotate_screenshot(screenshot_bytes, elements), elements
 
 
 async def _annotate_and_describe(
-    mgr: BrowserManager, tab: int = 0, scope: str | None = None, query: str | None = None
+    mgr: BrowserManager,
+    tab: int = 0,
+    scope: str | None = None,
+    query: str | None = None,
 ) -> str:
     annotated_bytes, elements = await _annotate_page(mgr, tab, scope)
     mgr.set_element_map(tab, elements)
     _maybe_dump(annotated_bytes, "annotated")
     element_list = format_element_list(elements)
-    context = f"Annotated page with {len(elements)} interactive elements:\n{element_list}"
+    context = (
+        f"Annotated page with {len(elements)} interactive elements:\n{element_list}"
+    )
     if query and config.vision_api_key:
         media = [MediaItem.from_bytes(annotated_bytes)]
         return await analyze_media(media, context, config, query)
@@ -118,7 +130,12 @@ async def navigate(
     wait: str | None = None,
     session: str = _DEFAULT_SESSION,
 ) -> str:
-    """Navigate to a URL and return page content. Use scope to focus on an element, wait to wait for a condition, query for vision analysis."""
+    """Navigate to a URL and return page content.
+
+    scope: CSS selector to restrict to a page sub-tree.
+    wait: "networkidle", "load", "domcontentloaded", or a CSS selector (waits for visibility, 10s timeout).
+    query: when set, returns vision analysis instead of text summary.
+    """
     mgr = _sessions.get(session)
     page = await mgr.get_page()
     await page.goto(url)
@@ -141,11 +158,15 @@ async def run_actions(
 
     Each action needs a 'type' key to select the action model.
 
-    Mutating: click, type_text, scroll, drag, navigate, evaluate_js, upload_file
-    Observations: screenshot, wait_for, list_clickable, http_request
+    Mutating: click, type_text, scroll, drag, navigate, evaluate_js, upload_file, key_press, click_element
+    Observations: screenshot, wait_for, http_request, hover, annotate
     Tab control: new_tab, switch_tab, close_tab
 
-    Any action can include 'wait' to wait after execution (networkidle, load, or a CSS selector).
+    Any action can include 'wait' to wait after execution (networkidle, load, domcontentloaded, or a CSS selector).
+
+    scope: CSS selector to restrict the final capture to a page sub-tree.
+    wait: after all actions, wait for a condition (networkidle, load, domcontentloaded, or a CSS selector).
+    query: when set, returns vision analysis of the final state instead of text summary.
     """
     mgr = _sessions.get(session)
     current_tab = 0
@@ -254,7 +275,7 @@ async def run_actions(
 async def screenshot(
     query: str | None = None, scope: str | None = None, session: str = _DEFAULT_SESSION
 ) -> str:
-    """Capture the current page or a scoped element. With query, returns vision analysis."""
+    """Capture the current page or a scoped element. scope is a CSS selector restricting to a page sub-tree. With query, returns vision analysis."""
     mgr = _sessions.get(session)
     state = await _capture(mgr, scope)
     return await _analyze(state, query)
@@ -267,11 +288,13 @@ async def get_interactive_elements(
     tab: int = 0,
     session: str = _DEFAULT_SESSION,
 ) -> str:
-    """Annotate the page with numbered interactive elements and return their ARIA refs.
+    """Annotate the page with numbered interactive elements and return their refs.
 
-    Returns a numbered list of all interactive elements with their ARIA refs.
+    Sets data-interact-ref attributes (e.g. e1, e2) on each element and overlays numbered badges on a screenshot.
+    Returns a numbered list with ref, role, and name for each element.
+    Use ref values in subsequent click, type_text, hover, drag, or upload_file actions.
+    scope: CSS selector to restrict to a page sub-tree.
     With query, also returns a vision analysis of the annotated screenshot.
-    Use the returned element numbers or refs in subsequent click/type_text actions.
     """
     mgr = _sessions.get(session)
     return await _annotate_and_describe(mgr, tab, scope, query)
@@ -281,7 +304,7 @@ async def get_interactive_elements(
 async def get_page_state(
     scope: str | None = None, session: str = _DEFAULT_SESSION
 ) -> str:
-    """Get current page URL, title, accessibility tree, focused element, and visible text."""
+    """Get current page URL, title, accessibility tree, focused element, and visible text. scope: CSS selector to restrict to a page sub-tree."""
     mgr = _sessions.get(session)
     state = await _capture(mgr, scope)
     return (

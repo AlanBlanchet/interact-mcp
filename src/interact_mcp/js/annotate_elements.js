@@ -8,9 +8,11 @@
                 return r.width > 4 && r.height > 4;
             })
             .slice(0, 50)
-            .map(el => {
+            .map((el, i) => {
                 const r = el.getBoundingClientRect();
+                const ref = 'e' + (i + 1);
+                el.setAttribute('data-interact-ref', ref);
                 const name = (el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '').trim().replace(/\s+/g,' ').slice(0, 60);
-                return { tag: el.tagName.toLowerCase(), name, x: r.x, y: r.y, width: r.width, height: r.height };
+                return { ref, tag: el.tagName.toLowerCase(), name, x: r.x, y: r.y, width: r.width, height: r.height };
             });
     }

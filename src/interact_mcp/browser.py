@@ -97,13 +97,17 @@ class BrowserManager:
         self._install_browser()
         self._playwright = await async_playwright().start()
         launcher = getattr(self._playwright, self._config.browser_type)
-        self._browser = await launcher.launch(headless=self._config.headless)
+        self._browser = await launcher.launch(
+            headless=self._config.headless,
+            slow_mo=self._config.slow_mo,
+        )
 
     async def _new_context(self, storage_state: dict | None = None):
         kwargs = self._context_kwargs()
         if storage_state is not None:
             kwargs["storage_state"] = storage_state
         self._context = await self._browser.new_context(**kwargs)
+        await self._context.grant_permissions(["clipboard-read", "clipboard-write"])
         await self._context.new_page()
 
 

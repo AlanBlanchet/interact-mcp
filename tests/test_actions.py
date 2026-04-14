@@ -9,8 +9,9 @@ from interact_mcp.actions import (
     CloseTabAction,
     DragAction,
     EvaluateJsAction,
+    HoverAction,
     HttpRequestAction,
-    ListClickableAction,
+    KeyPressAction,
     NavigateAction,
     NewTabAction,
     ScreenshotAction,
@@ -69,9 +70,25 @@ def test_wait_for_invalid_timeout():
         WaitForAction(selector="#el", timeout=0)
 
 
+def test_hover_with_ref():
+    action = HoverAction(ref="e10")
+    assert action.ref == "e10"
+    assert action.selector is None
+    assert action.x is None
+    assert action.mutates is False
+
+
+def test_hover_with_coordinates():
+    action = HoverAction(x=300, y=400)
+    assert action.x == 300
+    assert action.y == 400
+    assert action.mutates is False
+
+
 def test_discriminated_union_from_dict():
     raw = [
         {"type": "click", "selector": "#btn"},
+        {"type": "hover", "selector": "#link"},
         {"type": "navigate", "url": "https://example.com"},
         {"type": "screenshot"},
         {"type": "type_text", "selector": "#input", "text": "hello"},
@@ -79,7 +96,6 @@ def test_discriminated_union_from_dict():
         {"type": "drag", "from_x": 0, "from_y": 0, "to_x": 100, "to_y": 100},
         {"type": "evaluate_js", "script": "document.title"},
         {"type": "wait_for", "selector": "#loading", "state": "hidden"},
-        {"type": "list_clickable", "scope": "#nav"},
         {
             "type": "upload_file",
             "selector": "input[type=file]",
@@ -91,11 +107,13 @@ def test_discriminated_union_from_dict():
         {"type": "http_request", "url": "https://example.com"},
         {"type": "annotate"},
         {"type": "click_element", "element": 3},
+        {"type": "key_press", "key": "Enter"},
     ]
     actions = adapter.validate_python(raw)
-    assert len(actions) == 16
+    assert len(actions) == 17
     expected_types = [
         ClickAction,
+        HoverAction,
         NavigateAction,
         ScreenshotAction,
         TypeTextAction,
@@ -103,7 +121,6 @@ def test_discriminated_union_from_dict():
         DragAction,
         EvaluateJsAction,
         WaitForAction,
-        ListClickableAction,
         UploadFileAction,
         NewTabAction,
         SwitchTabAction,
@@ -111,6 +128,7 @@ def test_discriminated_union_from_dict():
         HttpRequestAction,
         AnnotateAction,
         ClickElementAction,
+        KeyPressAction,
     ]
     for action, expected in zip(actions, expected_types):
         assert isinstance(action, expected)
@@ -118,6 +136,7 @@ def test_discriminated_union_from_dict():
 
 def test_mutates_flag():
     assert ClickAction(selector="#x").mutates is True
+    assert HoverAction(selector="#x").mutates is False
     assert TypeTextAction(selector="#x", text="hi").mutates is True
     assert ScrollAction().mutates is True
     assert DragAction(from_x=0, from_y=0, to_x=1, to_y=1).mutates is True
@@ -125,7 +144,7 @@ def test_mutates_flag():
     assert EvaluateJsAction(script="1+1").mutates is True
     assert ScreenshotAction().mutates is False
     assert WaitForAction(selector="#x").mutates is False
-    assert ListClickableAction().mutates is False
+    assert UploadFileAction(selector="input", path="/f").mutates is True
     assert UploadFileAction(selector="input", path="/f.txt").mutates is True
     assert NewTabAction().mutates is False
     assert SwitchTabAction().mutates is False
@@ -133,6 +152,7 @@ def test_mutates_flag():
     assert HttpRequestAction(url="https://x.com").mutates is False
     assert AnnotateAction().mutates is False
     assert ClickElementAction(element=1).mutates is True
+    assert KeyPressAction(key="Enter").mutates is True
 
 
 def test_unknown_type_rejected():
@@ -228,3 +248,31 @@ def test_click_element_validates():
     assert action.element == 3
     assert action.type == "click_element"
     assert action.mutates is True
+
+
+def test_key_press_defaults():
+    action = KeyPressAction(key="Enter")
+    assert action.type == "key_press"
+    assert action.key == "Enter"
+
+
+def test_key_press_in_union():
+    raw = [{"type": "key_press", "key": "Control+c"}]
+    actions = adapter.validate_python(raw)
+    assert len(actions) == 1
+    assert isinstance(actions[0], KeyPressAction)
+    assert actions[0].key == "Control+c"
+
+
+def test_key_press_mutates():
+    assert KeyPressAction(key="Escape").mutates is True
+
+
+def test_drag_steps_default():
+    action = DragAction(from_x=0, from_y=0, to_x=100, to_y=100)
+    assert action.steps == 1
+
+
+def test_drag_steps_custom():
+    action = DragAction(from_x=0, from_y=0, to_x=100, to_y=100, steps=10)
+    assert action.steps == 10
