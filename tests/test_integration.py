@@ -117,15 +117,6 @@ async def test_click_selector():
     assert "Step 1 (click):" in result
 
 
-async def test_list_clickable_finds_elements():
-    actions = _action_adapter.validate_python([
-        {"type": "list_clickable"},
-    ])
-    result = await server.run_actions(actions=actions)
-    assert "list_clickable" in result
-    assert "a" in result.lower() or "input" in result.lower()
-
-
 async def test_drag_executes():
     actions = _action_adapter.validate_python([
         {"type": "drag", "from_x": 400, "from_y": 300, "to_x": 500, "to_y": 300},
@@ -138,7 +129,6 @@ async def test_full_workflow_with_vision():
     actions = _action_adapter.validate_python([
         {"type": "navigate", "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)", "wait": "networkidle"},
         {"type": "wait_for", "selector": "#firstHeading"},
-        {"type": "list_clickable"},
         {"type": "scroll", "direction": "down", "amount": 3},
         {"type": "evaluate_js", "script": "document.title"},
         {"type": "screenshot", "query": "What article is this?"},

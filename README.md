@@ -155,7 +155,7 @@ The primary interaction tool. Execute one or more actions and get per-step feedb
 | ---------------- | ---------- | ---------------------------------------------------------- |
 | `screenshot`     | —          | `scope`, `query`                                           |
 | `wait_for`       | `selector` | `state` (visible/hidden/attached/detached), `timeout` (ms) |
-| `list_clickable` | —          | `scope`                                                    |
+
 
 Single action:
 
@@ -172,7 +172,6 @@ run_actions(actions=[
   {"type": "type_text", "selector": "#password", "text": "secret"},
   {"type": "click", "selector": "button[type=submit]", "wait": "networkidle"},
   {"type": "wait_for", "selector": ".dashboard"},
-  {"type": "list_clickable", "scope": ".sidebar"},
   {"type": "screenshot", "scope": ".welcome-banner", "query": "What does it say?"}
 ], query="Is the user logged in?")
 ```
@@ -247,7 +246,7 @@ run_actions(actions=[
 
 ```
 navigate("http://localhost:8000", wait="networkidle")
-run_actions(actions=[{"type": "list_clickable"}])
+run_actions(actions=[{"type": "annotate"}])
 run_actions(actions=[
   {"type": "click", "selector": "nav a[href='/settings']", "wait": "networkidle"},
   {"type": "type_text", "selector": "#api-key", "text": "sk-test-123"},
@@ -262,7 +261,6 @@ run_actions(actions=[
 navigate("http://localhost:8000")
 screenshot(scope="#hero-table", query="Are there any alignment issues in the table?")
 get_page_state(scope=".sidebar")
-run_actions(actions=[{"type": "list_clickable", "scope": ".toolbar"}])
 ```
 
 ### Batch workflow: login + navigate

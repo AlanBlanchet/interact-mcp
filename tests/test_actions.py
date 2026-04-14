@@ -12,7 +12,6 @@ from interact_mcp.actions import (
     HoverAction,
     HttpRequestAction,
     KeyPressAction,
-    ListClickableAction,
     NavigateAction,
     NewTabAction,
     ScreenshotAction,
@@ -97,7 +96,6 @@ def test_discriminated_union_from_dict():
         {"type": "drag", "from_x": 0, "from_y": 0, "to_x": 100, "to_y": 100},
         {"type": "evaluate_js", "script": "document.title"},
         {"type": "wait_for", "selector": "#loading", "state": "hidden"},
-        {"type": "list_clickable", "scope": "#nav"},
         {
             "type": "upload_file",
             "selector": "input[type=file]",
@@ -112,7 +110,7 @@ def test_discriminated_union_from_dict():
         {"type": "key_press", "key": "Enter"},
     ]
     actions = adapter.validate_python(raw)
-    assert len(actions) == 18
+    assert len(actions) == 17
     expected_types = [
         ClickAction,
         HoverAction,
@@ -123,7 +121,6 @@ def test_discriminated_union_from_dict():
         DragAction,
         EvaluateJsAction,
         WaitForAction,
-        ListClickableAction,
         UploadFileAction,
         NewTabAction,
         SwitchTabAction,
@@ -147,7 +144,7 @@ def test_mutates_flag():
     assert EvaluateJsAction(script="1+1").mutates is True
     assert ScreenshotAction().mutates is False
     assert WaitForAction(selector="#x").mutates is False
-    assert ListClickableAction().mutates is False
+    assert UploadFileAction(selector="input", path="/f").mutates is True
     assert UploadFileAction(selector="input", path="/f.txt").mutates is True
     assert NewTabAction().mutates is False
     assert SwitchTabAction().mutates is False

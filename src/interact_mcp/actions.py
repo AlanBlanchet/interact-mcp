@@ -1,13 +1,10 @@
 from typing import Annotated, ClassVar, Literal
-from pathlib import Path
 
 import httpx
 from pydantic import BaseModel, Field, field_validator, model_validator
 from playwright.async_api import Page
 
 from interact_mcp.state import ref_locator
-
-_LIST_CLICKABLE_JS = (Path(__file__).parent / "js" / "list_clickable.js").read_text()
 
 
 class Action(BaseModel):
@@ -188,35 +185,6 @@ class WaitForAction(ObservationAction):
         return f"'{self.selector}' is {self.state}"
 
 
-class ListClickableAction(ObservationAction):
-    type: Literal["list_clickable"] = "list_clickable"
-    scope: str | None = None
-
-    async def execute(self, page: Page):
-        elements = await page.evaluate(
-            _LIST_CLICKABLE_JS,
-            self.scope,
-        )
-
-        if not elements:
-            return "No interactive elements found." + (
-                f" (scoped to '{self.scope}')" if self.scope else ""
-            )
-
-        lines = []
-        for el in elements:
-            parts = [el["tag"]]
-            if el["type"]:
-                parts.append(f"type={el['type']}")
-            if el["text"]:
-                parts.append(f'"{el["text"]}"')
-            if el["href"]:
-                parts.append(f"-> {el['href'][:60]}")
-            lines.append(f"  {el['selector']}  [{' | '.join(parts)}]")
-
-        return "\n".join(lines)
-
-
 class UploadFileAction(TargetedAction):
     type: Literal["upload_file"] = "upload_file"
     path: str
@@ -293,7 +261,6 @@ AnyAction = Annotated[
     | KeyPressAction
     | ScreenshotAction
     | WaitForAction
-    | ListClickableAction
     | UploadFileAction
     | NewTabAction
     | SwitchTabAction
