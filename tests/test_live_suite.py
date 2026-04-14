@@ -259,7 +259,7 @@ async def main():
     cfg = Config(
         headless=False,
         slow_mo=800,
-        vision_model="gpt-4o-mini",
+        image_model="gpt-4o-mini",
         screenshot_dump_dir=_SCREENSHOTS_DIR,
     )
     server.config = cfg

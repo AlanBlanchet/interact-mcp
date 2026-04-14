@@ -99,7 +99,7 @@ async def _annotate_and_describe(
     context = (
         f"Annotated page with {len(elements)} interactive elements:\n{element_list}"
     )
-    if query and config.vision_api_key:
+    if query and config.api_key_for(config.image_model):
         media = [MediaItem.from_bytes(annotated_bytes)]
         return await analyze_media(media, context, config, query)
     return context

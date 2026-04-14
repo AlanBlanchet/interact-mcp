@@ -16,7 +16,7 @@ pytestmark = [
 
 @pytest.fixture(scope="module")
 async def _setup():
-    cfg = Config(vision_model="gpt-4o-mini", headless=True)
+    cfg = Config(image_model="gpt-4o-mini", headless=True)
     registry = SessionRegistry(cfg)
 
     orig_config = server.config

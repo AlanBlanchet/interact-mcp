@@ -31,35 +31,49 @@ sudo apt install maim
 
 All settings are environment variables with the `INTERACT_MCP_` prefix.
 
-| Variable                           | Default    | Description                                                                          |
-| ---------------------------------- | ---------- | ------------------------------------------------------------------------------------ |
-| `INTERACT_MCP_VISION_MODEL`        | `gpt-4o`   | litellm model string — any provider supported                                        |
-| `INTERACT_MCP_VISION_API_KEY`      | _(empty)_  | API key for the vision model. When empty, tools return text-only summaries           |
-| `INTERACT_MCP_VISION_BASE_URL`     | _(none)_   | Custom endpoint (e.g. local Ollama, Azure)                                           |
-| `INTERACT_MCP_HEADLESS`            | `true`     | Run browser headlessly                                                               |
-| `INTERACT_MCP_BROWSER_TYPE`        | `chromium` | `chromium`, `firefox`, or `webkit`                                                   |
-| `INTERACT_MCP_VIEWPORT_WIDTH`      | `1280`     | Browser viewport width                                                               |
-| `INTERACT_MCP_VIEWPORT_HEIGHT`     | `720`      | Browser viewport height                                                              |
-| `INTERACT_MCP_SCREENSHOT_DUMP_DIR` | _(none)_   | When set, saves every screenshot as a PNG file to this folder — useful for debugging |
+| Variable                           | Default                      | Description                                                                          |
+| ---------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------ |
+| `INTERACT_MCP_IMAGE_MODEL`         | `gpt-4o`                     | litellm model string for image (screenshot) analysis                                 |
+| `INTERACT_MCP_VIDEO_MODEL`         | `gemini/gemini-2.0-flash`    | litellm model string for video analysis                                              |
+| `INTERACT_MCP_IMAGE_BASE_URL`      | _(none)_                     | Custom endpoint for image model (e.g. local Ollama, Azure)                           |
+| `INTERACT_MCP_VIDEO_BASE_URL`      | _(none)_                     | Custom endpoint for video model                                                      |
+| `INTERACT_MCP_HEADLESS`            | `true`                       | Run browser headlessly                                                               |
+| `INTERACT_MCP_BROWSER_TYPE`        | `chromium`                   | `chromium`, `firefox`, or `webkit`                                                   |
+| `INTERACT_MCP_VIEWPORT_WIDTH`      | `1280`                       | Browser viewport width                                                               |
+| `INTERACT_MCP_VIEWPORT_HEIGHT`     | `720`                        | Browser viewport height                                                              |
+| `INTERACT_MCP_SCREENSHOT_DUMP_DIR` | _(none)_                     | When set, saves every screenshot as a PNG file to this folder — useful for debugging |
+
+### API key resolution
+
+API keys are resolved automatically from standard provider environment variables based on the model prefix. No interact-mcp-specific key variables are needed.
+
+| Provider   | Environment variable | Models                                                       |
+| ---------- | -------------------- | ------------------------------------------------------------ |
+| OpenAI     | `OPENAI_API_KEY`     | `gpt-*`, `o1-*`, `o3-*`, `o4-*`, `chatgpt-*`, `openai/*`   |
+| Google     | `GEMINI_API_KEY`     | `gemini/*`                                                   |
+| Anthropic  | `ANTHROPIC_API_KEY`  | `claude-*`, `anthropic/*`                                    |
+| ZAI        | `ZAI_API_KEY`        | `zai/*` (falls back to `Z_AI_API_KEY`)                       |
 
 ### Vision model examples
 
 ```bash
-# OpenAI
-INTERACT_MCP_VISION_API_KEY=sk-...
-INTERACT_MCP_VISION_MODEL=gpt-4o
+# OpenAI (default image model)
+OPENAI_API_KEY=sk-...
+
+# Google Gemini (default video model)
+GEMINI_API_KEY=...
 
 # Anthropic
-INTERACT_MCP_VISION_API_KEY=sk-ant-...
-INTERACT_MCP_VISION_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_API_KEY=sk-ant-...
+INTERACT_MCP_IMAGE_MODEL=claude-3-5-sonnet-20241022
 
-# Google
-INTERACT_MCP_VISION_API_KEY=...
-INTERACT_MCP_VISION_MODEL=gemini/gemini-1.5-pro
+# ZAI
+ZAI_API_KEY=...
+INTERACT_MCP_IMAGE_MODEL=zai/glm-4.5v
 
 # Local (no key needed)
-INTERACT_MCP_VISION_MODEL=ollama/llava
-INTERACT_MCP_VISION_BASE_URL=http://localhost:11434
+INTERACT_MCP_IMAGE_MODEL=ollama/llava
+INTERACT_MCP_IMAGE_BASE_URL=http://localhost:11434
 ```
 
 ---
@@ -75,8 +89,8 @@ INTERACT_MCP_VISION_BASE_URL=http://localhost:11434
       "command": "uvx",
       "args": ["interact-mcp"],
       "env": {
-        "INTERACT_MCP_VISION_API_KEY": "sk-...",
-        "INTERACT_MCP_VISION_MODEL": "gpt-4o"
+        "OPENAI_API_KEY": "sk-...",
+        "GEMINI_API_KEY": "..."
       }
     }
   }
@@ -95,7 +109,7 @@ In `.vscode/mcp.json` or `~/.config/Code/User/mcp.json`:
       "command": "bash",
       "args": [
         "-c",
-        "source ~/.api_keys && INTERACT_MCP_VISION_API_KEY=$OPENAI_API_KEY exec uvx interact-mcp"
+        "source ~/.api_keys && OPENAI_API_KEY=$OPENAI_API_KEY exec uvx interact-mcp"
       ]
     }
   }
@@ -112,7 +126,8 @@ Or with explicit env:
       "command": "uvx",
       "args": ["interact-mcp"],
       "env": {
-        "INTERACT_MCP_VISION_API_KEY": "sk-..."
+        "OPENAI_API_KEY": "sk-...",
+        "GEMINI_API_KEY": "..."
       }
     }
   }
