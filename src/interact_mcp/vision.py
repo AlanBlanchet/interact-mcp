@@ -45,8 +45,8 @@ def _extract_frames(video_base64: str, mime_type: str, fps: int = 1) -> list[str
         ]
 
 
-def _video_content(item: MediaItem, config: Config) -> list[dict]:
-    if config.vision_model.startswith("gemini"):
+def _video_content(item: MediaItem, model: str) -> list[dict]:
+    if model.startswith("gemini"):
         return [{
             "type": "file",
             "file": {
@@ -60,15 +60,16 @@ def _video_content(item: MediaItem, config: Config) -> list[dict]:
     ]
 
 
-async def _vision_completion(messages: list[dict], config: Config) -> str:
+async def _vision_completion(messages: list[dict], model: str, api_key: str, base_url: str | None) -> str:
     kwargs: dict = {
-        "model": config.vision_model,
+        "model": model,
         "messages": messages,
-        "api_key": config.vision_api_key,
         "max_tokens": 200,
     }
-    if config.vision_base_url:
-        kwargs["api_base"] = config.vision_base_url
+    if api_key:
+        kwargs["api_key"] = api_key
+    if base_url:
+        kwargs["api_base"] = base_url
 
     response = await litellm.acompletion(**kwargs)
     return response.choices[0].message.content
@@ -88,19 +89,23 @@ async def analyze_media(
     config: Config,
     prompt: str | None = None,
 ) -> str:
-    if not config.vision_api_key:
+    has_video = any(m.media_type == "video" for m in media)
+    model, base_url = config.model_for("video" if has_video else "image")
+    key = config.api_key_for(model)
+    if not key:
         return context
     content: list[dict] = [{"type": "text", "text": context}]
     for item in media:
         if item.media_type == "image":
             content.append(_image_content(item))
         else:
-            content.extend(_video_content(item, config))
-    return await _vision_completion(_build_messages(content, prompt), config)
+            content.extend(_video_content(item, model))
+    return await _vision_completion(_build_messages(content, prompt), model, key, base_url)
 
 
 async def analyze_screenshot(state: PageState, config: Config, prompt: str | None = None) -> str:
-    if not config.vision_api_key:
+    key = config.api_key_for(config.image_model)
+    if not key:
         return state.text_summary()
     media = [MediaItem(data=state.screenshot_base64)]
     return await analyze_media(
