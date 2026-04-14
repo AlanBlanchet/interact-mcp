@@ -3,8 +3,16 @@
   "displayName": "Interact MCP",
   "description": "Configure and run the Interact MCP server for browser automation",
   "version": "0.1.0",
-  "publisher": "interact-mcp",
+  "publisher": "Interact",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlanBlanchet/interact-mcp"
+  },
+  "homepage": "https://github.com/AlanBlanchet/interact-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/AlanBlanchet/interact-mcp/issues"
+  },
   "engines": {
     "vscode": "^1.99.0"
   },
@@ -24,12 +32,12 @@
       "properties": {
         "interactMcp.imageModel": {
           "type": "string",
-          "default": "gpt-4o",
+          "default": "gpt-4.1",
           "description": "Vision model for screenshot/image analysis"
         },
         "interactMcp.videoModel": {
           "type": "string",
-          "default": "gemini/gemini-2.0-flash",
+          "default": "gemini/gemini-2.5-flash",
           "description": "Vision model for video analysis"
         },
         "interactMcp.imageBaseUrl": {
@@ -95,6 +103,7 @@
   "devDependencies": {
     "@types/node": "^25.6.0",
     "@types/vscode": "^1.99.0",
+    "@vscode/vsce": "^3.5.0",
     "typescript": "^5.7.0"
   }
 }
