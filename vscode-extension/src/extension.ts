@@ -1,109 +1,143 @@
 import * as vscode from "vscode";
 
-const SETTINGS_TO_ENV: [string, string][] = [
-  ["imageModel", "INTERACT_MCP_IMAGE_MODEL"],
-  ["videoModel", "INTERACT_MCP_VIDEO_MODEL"],
-  ["imageBaseUrl", "INTERACT_MCP_IMAGE_BASE_URL"],
-  ["videoBaseUrl", "INTERACT_MCP_VIDEO_BASE_URL"],
-  ["headless", "INTERACT_MCP_HEADLESS"],
-  ["browserType", "INTERACT_MCP_BROWSER_TYPE"],
-  ["viewportWidth", "INTERACT_MCP_VIEWPORT_WIDTH"],
-  ["viewportHeight", "INTERACT_MCP_VIEWPORT_HEIGHT"],
-];
+const ENV_PREFIX = "INTERACT_MCP_";
+const SETTING_SECTION = "interactMcp";
 
-const API_KEY_VARS = [
-  "OPENAI_API_KEY",
-  "GEMINI_API_KEY",
-  "ANTHROPIC_API_KEY",
-  "AZURE_API_KEY",
-  "AZURE_API_BASE",
-  "AWS_ACCESS_KEY_ID",
-  "AWS_SECRET_ACCESS_KEY",
-  "AWS_REGION_NAME",
-  "GROQ_API_KEY",
-  "MISTRAL_API_KEY",
-  "DEEPSEEK_API_KEY",
-  "TOGETHER_API_KEY",
-  "OPENROUTER_API_KEY",
-  "REPLICATE_API_KEY",
-  "HUGGINGFACE_API_KEY",
-  "COHERE_API_KEY",
-  "VOYAGE_API_KEY",
-  "VERTEXAI_PROJECT",
-  "VERTEXAI_LOCATION",
-];
+interface ProviderInfo {
+  envKeys: string[];
+  models: string[];
+}
 
-type ModelMap = Record<string, string[]>;
+interface ModelsData {
+  providers: Record<string, ProviderInfo>;
+}
 
-function buildEnv(): Record<string, string> {
-  const cfg = vscode.workspace.getConfiguration("interactMcp");
+interface ModelSettingItem extends vscode.QuickPickItem {
+  settingKey: string;
+}
+
+function settingToEnv(key: string): string {
+  return ENV_PREFIX + key.replace(/[A-Z]/g, (c) => "_" + c).toUpperCase();
+}
+
+function formatLabel(key: string): string {
+  return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
+}
+
+function buildEnv(
+  settingKeys: string[],
+  modelsData: ModelsData,
+): Record<string, string> {
+  const cfg = vscode.workspace.getConfiguration(SETTING_SECTION);
   const env: Record<string, string> = {};
 
-  for (const [settingKey, envVar] of SETTINGS_TO_ENV) {
-    const value = cfg.get(settingKey);
+  for (const key of settingKeys) {
+    const value = cfg.get(key);
     if (value === undefined || value === null || value === "") continue;
-    env[envVar] = typeof value === "boolean" ? (value ? "true" : "false") : String(value);
+    env[settingToEnv(key)] =
+      typeof value === "boolean" ? (value ? "true" : "false") : String(value);
   }
 
-  for (const v of API_KEY_VARS) {
-    if (process.env[v]) env[v] = process.env[v]!;
+  const seen = new Set<string>();
+  for (const info of Object.values(modelsData.providers)) {
+    for (const key of info.envKeys) {
+      if (!seen.has(key) && process.env[key]) {
+        env[key] = process.env[key]!;
+      }
+      seen.add(key);
+    }
   }
 
   return env;
 }
 
 async function selectModel(
-  settingKey: "imageModel" | "videoModel",
-  models: ModelMap,
+  settingKeys: string[],
+  modelsData: ModelsData,
 ): Promise<void> {
+  const modelKeys = settingKeys.filter((k) => k.endsWith("Model"));
+  if (!modelKeys.length) return;
+
+  let settingKey: string;
+  if (modelKeys.length === 1) {
+    settingKey = modelKeys[0];
+  } else {
+    const picked = await vscode.window.showQuickPick<ModelSettingItem>(
+      modelKeys.map((k) => ({ label: formatLabel(k), settingKey: k })),
+      { placeHolder: "Which model to configure?" },
+    );
+    if (!picked) return;
+    settingKey = picked.settingKey;
+  }
+
   const items: vscode.QuickPickItem[] = [];
-  for (const [provider, names] of Object.entries(models)) {
+  for (const [provider, info] of Object.entries(modelsData.providers)) {
     items.push({ label: provider, kind: vscode.QuickPickItemKind.Separator });
-    for (const name of names) {
+    for (const name of info.models) {
       items.push({ label: name });
     }
   }
 
   if (!items.length) {
-    vscode.window.showWarningMessage("No models available. Run generate-models script.");
+    vscode.window.showWarningMessage(
+      "No models available. Run generate-models script.",
+    );
     return;
   }
 
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: `Select ${settingKey === "imageModel" ? "image" : "video"} model`,
+    placeHolder: `Select ${formatLabel(settingKey).toLowerCase()}`,
     matchOnDescription: true,
   });
 
   if (picked) {
     await vscode.workspace
-      .getConfiguration("interactMcp")
+      .getConfiguration(SETTING_SECTION)
       .update(settingKey, picked.label, vscode.ConfigurationTarget.Global);
   }
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  let models: ModelMap = {};
-  try { models = require("./models.json"); } catch {}
+  let modelsData: ModelsData = { providers: {} };
+  try {
+    const loaded = require("./models.json");
+    if (loaded?.providers) modelsData = loaded;
+  } catch {}
+
+  const prefix = SETTING_SECTION + ".";
+  const settingKeys = Object.keys(
+    context.extension.packageJSON?.contributes?.configuration?.properties ?? {},
+  )
+    .filter((k) => k.startsWith(prefix))
+    .map((k) => k.slice(prefix.length));
+
   const emitter = new vscode.EventEmitter<void>();
 
-  const provider = (vscode.lm as any).registerMcpServerDefinitionProvider("interact-mcp", {
-    provideMcpServerDefinitions() {
-      return [new (vscode as any).McpStdioServerDefinition("Interact MCP", "uvx", ["interact-mcp"], buildEnv())];
+  const serverDef = (vscode.lm as any).registerMcpServerDefinitionProvider(
+    "interact-mcp",
+    {
+      provideMcpServerDefinitions() {
+        return [
+          new (vscode as any).McpStdioServerDefinition(
+            "Interact MCP",
+            "uvx",
+            ["interact-mcp"],
+            buildEnv(settingKeys, modelsData),
+          ),
+        ];
+      },
+      onDidChangeMcpServerDefinitions: emitter.event,
     },
-    onDidChangeMcpServerDefinitions: emitter.event,
-  });
+  );
 
   context.subscriptions.push(
-    provider,
+    serverDef,
     emitter,
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("interactMcp")) emitter.fire();
+      if (e.affectsConfiguration(SETTING_SECTION)) emitter.fire();
     }),
-    vscode.commands.registerCommand("interactMcp.selectImageModel", () =>
-      selectModel("imageModel", models),
-    ),
-    vscode.commands.registerCommand("interactMcp.selectVideoModel", () =>
-      selectModel("videoModel", models),
+    vscode.commands.registerCommand("interactMcp.selectModel", () =>
+      selectModel(settingKeys, modelsData),
     ),
   );
 }
