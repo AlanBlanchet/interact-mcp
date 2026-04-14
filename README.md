@@ -99,38 +99,69 @@ INTERACT_MCP_IMAGE_BASE_URL=http://localhost:11434
 
 ### VS Code / Copilot
 
-In `.vscode/mcp.json` or `~/.config/Code/User/mcp.json`:
+Create `.vscode/mcp.json` in your project (not this repo) with one of these configurations:
+
+**OpenAI only:**
 
 ```json
 {
   "servers": {
     "interact": {
       "type": "stdio",
-      "command": "bash",
-      "args": [
-        "-c",
-        "source ~/.api_keys && OPENAI_API_KEY=$OPENAI_API_KEY exec uvx interact-mcp"
-      ]
+      "command": "uv",
+      "args": ["run", "interact-mcp"],
+      "env": {
+        "OPENAI_API_KEY": "${input:openai-key}"
+      }
     }
-  }
+  },
+  "inputs": [
+    { "type": "promptString", "id": "openai-key", "description": "OpenAI API key", "password": true }
+  ]
 }
 ```
 
-Or with explicit env:
+**Gemini only:**
 
 ```json
 {
   "servers": {
     "interact": {
       "type": "stdio",
-      "command": "uvx",
-      "args": ["interact-mcp"],
+      "command": "uv",
+      "args": ["run", "interact-mcp"],
       "env": {
-        "OPENAI_API_KEY": "sk-...",
-        "GEMINI_API_KEY": "..."
+        "GEMINI_API_KEY": "${input:gemini-key}",
+        "INTERACT_MCP_IMAGE_MODEL": "gemini/gemini-2.0-flash",
+        "INTERACT_MCP_VIDEO_MODEL": "gemini/gemini-2.0-flash"
       }
     }
-  }
+  },
+  "inputs": [
+    { "type": "promptString", "id": "gemini-key", "description": "Gemini API key", "password": true }
+  ]
+}
+```
+
+**Multi-provider (OpenAI images + Gemini video):**
+
+```json
+{
+  "servers": {
+    "interact": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "interact-mcp"],
+      "env": {
+        "OPENAI_API_KEY": "${input:openai-key}",
+        "GEMINI_API_KEY": "${input:gemini-key}"
+      }
+    }
+  },
+  "inputs": [
+    { "type": "promptString", "id": "openai-key", "description": "OpenAI API key", "password": true },
+    { "type": "promptString", "id": "gemini-key", "description": "Gemini API key", "password": true }
+  ]
 }
 ```
 

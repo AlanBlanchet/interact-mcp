@@ -1,4 +1,6 @@
 import subprocess
+from collections import deque
+from datetime import datetime
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
@@ -14,6 +16,8 @@ class BrowserManager:
         self._context: BrowserContext | None = None
         # TODO: element map may go stale after mutating actions (click, navigate, etc.)
         self._element_map: dict[int, list[InteractiveElement]] = {}
+        self._network_log: deque[dict] = deque(maxlen=100)
+        self._console_log: deque[dict] = deque(maxlen=100)
 
     def set_element_map(self, tab: int, elements: list[InteractiveElement]):
         self._element_map[tab] = elements
@@ -46,6 +50,7 @@ class BrowserManager:
     async def new_tab(self, url: str | None = None) -> int:
         await self.ensure_ready()
         page = await self._context.new_page()
+        self._attach_page_listeners(page)
         if url:
             await page.goto(url)
         return len(self._context.pages) - 1
@@ -108,7 +113,41 @@ class BrowserManager:
             kwargs["storage_state"] = storage_state
         self._context = await self._browser.new_context(**kwargs)
         await self._context.grant_permissions(["clipboard-read", "clipboard-write"])
-        await self._context.new_page()
+        page = await self._context.new_page()
+        self._attach_page_listeners(page)
+
+
+    def _attach_page_listeners(self, page: Page):
+        page.on("request", lambda req: self._network_log.append(
+            {"method": req.method, "url": req.url, "ts": datetime.now().isoformat(timespec="seconds")}
+        ))
+        page.on("response", lambda resp: self._on_response(resp))
+        page.on("console", lambda msg: self._console_log.append(
+            {"level": msg.type, "text": msg.text, "ts": datetime.now().isoformat(timespec="seconds")}
+        ))
+        page.on("pageerror", lambda err: self._console_log.append(
+            {"level": "error", "text": str(err), "ts": datetime.now().isoformat(timespec="seconds")}
+        ))
+
+    def _on_response(self, response):
+        url = response.url
+        for entry in reversed(self._network_log):
+            if entry["url"] == url and "status" not in entry:
+                entry["status"] = response.status
+                entry["content_type"] = response.headers.get("content-type", "")
+                break
+
+    def drain_network_log(self, clear: bool = False) -> list[dict]:
+        entries = list(self._network_log)
+        if clear:
+            self._network_log.clear()
+        return entries
+
+    def drain_console_log(self, clear: bool = False) -> list[dict]:
+        entries = list(self._console_log)
+        if clear:
+            self._console_log.clear()
+        return entries
 
 
 class SessionRegistry:

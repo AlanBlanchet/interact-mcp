@@ -45,6 +45,10 @@ def _find_desktop_window(title: str) -> desktop.DesktopWindow | str:
     return win
 
 
+def _session_response(session: str, body: str) -> str:
+    return f"[session: {session}]\n{body}"
+
+
 def _maybe_dump(data: bytes, label: str, ext: str = "png"):
     if config.screenshot_dump_dir:
         dump_media(data, label, config.screenshot_dump_dir, ext=ext)
@@ -142,8 +146,8 @@ async def navigate(
     await _wait(page, wait)
     state = await _capture(mgr, scope)
     if query:
-        return await _analyze(state, query)
-    return state.text_summary()
+        return _session_response(session, await _analyze(state, query))
+    return _session_response(session, state.text_summary())
 
 
 @mcp.tool()
@@ -268,7 +272,7 @@ async def run_actions(
     else:
         final_summary = f"{final.title} — {final.url}\n{final.visible_text[:500]}"
 
-    return "\n".join(step_reports) + f"\n\n---\nFinal state: {final_summary}"
+    return _session_response(session, "\n".join(step_reports) + f"\n\n---\nFinal state: {final_summary}")
 
 
 @mcp.tool()
@@ -278,7 +282,7 @@ async def screenshot(
     """Capture the current page or a scoped element. scope is a CSS selector restricting to a page sub-tree. With query, returns vision analysis."""
     mgr = _sessions.get(session)
     state = await _capture(mgr, scope)
-    return await _analyze(state, query)
+    return _session_response(session, await _analyze(state, query))
 
 
 @mcp.tool()
@@ -297,7 +301,7 @@ async def get_interactive_elements(
     With query, also returns a vision analysis of the annotated screenshot.
     """
     mgr = _sessions.get(session)
-    return await _annotate_and_describe(mgr, tab, scope, query)
+    return _session_response(session, await _annotate_and_describe(mgr, tab, scope, query))
 
 
 @mcp.tool()
@@ -307,7 +311,7 @@ async def get_page_state(
     """Get current page URL, title, accessibility tree, focused element, and visible text. scope: CSS selector to restrict to a page sub-tree."""
     mgr = _sessions.get(session)
     state = await _capture(mgr, scope)
-    return (
+    return _session_response(session,
         f"URL: {state.url}\n"
         f"Title: {state.title}\n"
         f"Focused: {state.focused_element}\n\n"
@@ -329,7 +333,7 @@ async def list_sessions() -> str:
 async def close_session(session: str = _DEFAULT_SESSION) -> str:
     """Close a browser session and free its resources."""
     await _sessions.close(session)
-    return f"Session '{session}' closed."
+    return _session_response(session, f"Session '{session}' closed.")
 
 
 @mcp.tool()
@@ -338,7 +342,7 @@ async def save_session(path: str, session: str = _DEFAULT_SESSION) -> str:
     mgr = _sessions.get(session)
     state = await mgr.save_state()
     Path(path).write_text(json.dumps(state))
-    return f"Session '{session}' saved to {path}."
+    return _session_response(session, f"Session '{session}' saved to {path}.")
 
 
 @mcp.tool()
@@ -347,7 +351,51 @@ async def load_session(path: str, session: str = _DEFAULT_SESSION) -> str:
     state = json.loads(Path(path).read_text())
     mgr = _sessions.get(session)
     await mgr.load_state(state)
-    return f"Session '{session}' restored from {path}."
+    return _session_response(session, f"Session '{session}' restored from {path}.")
+
+
+@mcp.tool()
+async def download_asset(
+    url: str, path: str, session: str = _DEFAULT_SESSION
+) -> str:
+    """Download a URL to a local file path. Uses the browser session's cookies for authenticated downloads."""
+    mgr = _sessions.get(session)
+    page = await mgr.get_page()
+    response = await page.context.request.get(url)
+    data = await response.body()
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_bytes(data)
+    return _session_response(session, f"Downloaded {len(data)} bytes to {path}")
+
+
+@mcp.tool()
+async def get_network_log(
+    clear: bool = False, session: str = _DEFAULT_SESSION
+) -> str:
+    """Return captured network requests (last 100). Set clear=True to flush the log after reading."""
+    mgr = _sessions.get(session)
+    entries = mgr.drain_network_log(clear)
+    if not entries:
+        return _session_response(session, "No network requests captured.")
+    lines = []
+    for e in entries:
+        status = e.get("status", "pending")
+        ctype = e.get("content_type", "")
+        lines.append(f"{e['method']} {status} {e['url']}" + (f" ({ctype})" if ctype else ""))
+    return _session_response(session, "\n".join(lines))
+
+
+@mcp.tool()
+async def get_console_log(
+    clear: bool = False, session: str = _DEFAULT_SESSION
+) -> str:
+    """Return captured browser console messages and errors (last 100). Set clear=True to flush after reading."""
+    mgr = _sessions.get(session)
+    entries = mgr.drain_console_log(clear)
+    if not entries:
+        return _session_response(session, "No console messages captured.")
+    lines = [f"[{e['level']}] {e['text']}" for e in entries]
+    return _session_response(session, "\n".join(lines))
 
 
 @mcp.tool()
