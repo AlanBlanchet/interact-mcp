@@ -87,13 +87,18 @@ async def _annotate_page(
 
 
 async def _annotate_and_describe(
-    mgr: BrowserManager, tab: int = 0, scope: str | None = None, query: str | None = None
+    mgr: BrowserManager,
+    tab: int = 0,
+    scope: str | None = None,
+    query: str | None = None,
 ) -> str:
     annotated_bytes, elements = await _annotate_page(mgr, tab, scope)
     mgr.set_element_map(tab, elements)
     _maybe_dump(annotated_bytes, "annotated")
     element_list = format_element_list(elements)
-    context = f"Annotated page with {len(elements)} interactive elements:\n{element_list}"
+    context = (
+        f"Annotated page with {len(elements)} interactive elements:\n{element_list}"
+    )
     if query and config.vision_api_key:
         media = [MediaItem.from_bytes(annotated_bytes)]
         return await analyze_media(media, context, config, query)

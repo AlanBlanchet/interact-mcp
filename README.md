@@ -151,11 +151,10 @@ The primary interaction tool. Execute one or more actions and get per-step feedb
 
 **Observations** (read current state, no diff):
 
-| Type             | Fields     | Optional                                                   |
-| ---------------- | ---------- | ---------------------------------------------------------- |
-| `screenshot`     | —          | `scope`, `query`                                           |
-| `wait_for`       | `selector` | `state` (visible/hidden/attached/detached), `timeout` (ms) |
-
+| Type         | Fields     | Optional                                                   |
+| ------------ | ---------- | ---------------------------------------------------------- |
+| `screenshot` | —          | `scope`, `query`                                           |
+| `wait_for`   | `selector` | `state` (visible/hidden/attached/detached), `timeout` (ms) |
 
 Single action:
 

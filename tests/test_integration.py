@@ -54,14 +54,22 @@ async def test_get_page_state_structure():
 
 
 async def test_screenshot_identifies_content():
-    result = await server.screenshot(query="Describe the main visual elements on this page.")
+    result = await server.screenshot(
+        query="Describe the main visual elements on this page."
+    )
     assert len(result) > 20
 
 
 async def test_type_and_verify():
-    actions = _action_adapter.validate_python([
-        {"type": "type_text", "selector": "input[name='search']", "text": "Python programming"},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {
+                "type": "type_text",
+                "selector": "input[name='search']",
+                "text": "Python programming",
+            },
+        ]
+    )
     result = await server.run_actions(
         actions=actions,
         query="What text is in the search box?",
@@ -70,10 +78,16 @@ async def test_type_and_verify():
 
 
 async def test_navigate_to_article_and_verify():
-    actions = _action_adapter.validate_python([
-        {"type": "navigate", "url": "https://en.wikipedia.org/wiki/Python_(programming_language)", "wait": "networkidle"},
-        {"type": "wait_for", "selector": "#firstHeading"},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {
+                "type": "navigate",
+                "url": "https://en.wikipedia.org/wiki/Python_(programming_language)",
+                "wait": "networkidle",
+            },
+            {"type": "wait_for", "selector": "#firstHeading"},
+        ]
+    )
     result = await server.run_actions(
         actions=actions,
         query="What programming language is this article about?",
@@ -82,25 +96,31 @@ async def test_navigate_to_article_and_verify():
 
 
 async def test_scroll_reveals_content():
-    actions = _action_adapter.validate_python([
-        {"type": "scroll", "direction": "down", "amount": 5},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {"type": "scroll", "direction": "down", "amount": 5},
+        ]
+    )
     result = await server.run_actions(actions=actions)
     assert "Step 1 (scroll):" in result
 
 
 async def test_evaluate_js_returns_value():
-    actions = _action_adapter.validate_python([
-        {"type": "evaluate_js", "script": "document.title"},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {"type": "evaluate_js", "script": "document.title"},
+        ]
+    )
     result = await server.run_actions(actions=actions)
     assert "Python" in result
 
 
 async def test_click_coordinate():
-    actions = _action_adapter.validate_python([
-        {"type": "click", "x": 640, "y": 360, "wait": "networkidle"},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {"type": "click", "x": 640, "y": 360, "wait": "networkidle"},
+        ]
+    )
     result = await server.run_actions(actions=actions)
     assert "Step 1 (click):" in result
 
@@ -110,29 +130,39 @@ async def test_click_selector():
         "https://en.wikipedia.org/wiki/Python_(programming_language)",
         wait="networkidle",
     )
-    actions = _action_adapter.validate_python([
-        {"type": "click", "selector": "#firstHeading"},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {"type": "click", "selector": "#firstHeading"},
+        ]
+    )
     result = await server.run_actions(actions=actions)
     assert "Step 1 (click):" in result
 
 
 async def test_drag_executes():
-    actions = _action_adapter.validate_python([
-        {"type": "drag", "from_x": 400, "from_y": 300, "to_x": 500, "to_y": 300},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {"type": "drag", "from_x": 400, "from_y": 300, "to_x": 500, "to_y": 300},
+        ]
+    )
     result = await server.run_actions(actions=actions)
     assert "Step 1 (drag):" in result
 
 
 async def test_full_workflow_with_vision():
-    actions = _action_adapter.validate_python([
-        {"type": "navigate", "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)", "wait": "networkidle"},
-        {"type": "wait_for", "selector": "#firstHeading"},
-        {"type": "scroll", "direction": "down", "amount": 3},
-        {"type": "evaluate_js", "script": "document.title"},
-        {"type": "screenshot", "query": "What article is this?"},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {
+                "type": "navigate",
+                "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+                "wait": "networkidle",
+            },
+            {"type": "wait_for", "selector": "#firstHeading"},
+            {"type": "scroll", "direction": "down", "amount": 3},
+            {"type": "evaluate_js", "script": "document.title"},
+            {"type": "screenshot", "query": "What article is this?"},
+        ]
+    )
     result = await server.run_actions(
         actions=actions,
         query="Summarize what we're looking at.",
@@ -165,9 +195,11 @@ async def test_session_isolation():
 
 async def test_http_request_action():
     """HTTP request action fires raw request without browser."""
-    actions = _action_adapter.validate_python([
-        {"type": "http_request", "method": "GET", "url": "https://httpbin.org/get"},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {"type": "http_request", "method": "GET", "url": "https://httpbin.org/get"},
+        ]
+    )
     result = await server.run_actions(actions=actions)
     assert "200" in result
     assert "httpbin" in result.lower()
@@ -175,14 +207,21 @@ async def test_http_request_action():
 
 async def test_multi_tab():
     """New tab opens independently, switch_tab changes context."""
-    await server.navigate("https://en.wikipedia.org", wait="networkidle", session="tabs_test")
+    await server.navigate(
+        "https://en.wikipedia.org", wait="networkidle", session="tabs_test"
+    )
 
-    actions = _action_adapter.validate_python([
-        {"type": "new_tab", "url": "https://en.wikipedia.org/wiki/Python_(programming_language)"},
-        {"type": "switch_tab", "index": 1},
-        {"type": "wait_for", "selector": "#firstHeading"},
-        {"type": "screenshot", "query": "What article is this?"},
-    ])
+    actions = _action_adapter.validate_python(
+        [
+            {
+                "type": "new_tab",
+                "url": "https://en.wikipedia.org/wiki/Python_(programming_language)",
+            },
+            {"type": "switch_tab", "index": 1},
+            {"type": "wait_for", "selector": "#firstHeading"},
+            {"type": "screenshot", "query": "What article is this?"},
+        ]
+    )
     result = await server.run_actions(actions=actions, session="tabs_test")
     assert "python" in result.lower()
 
@@ -192,7 +231,9 @@ async def test_multi_tab():
 
 async def test_annotate_and_click_by_ref():
     """Annotate page, get refs, click by ref — no coordinates needed."""
-    await server.navigate("https://en.wikipedia.org", wait="networkidle", session="ref_test")
+    await server.navigate(
+        "https://en.wikipedia.org", wait="networkidle", session="ref_test"
+    )
 
     result = await server.get_interactive_elements(session="ref_test")
     assert "interactive elements" in result
