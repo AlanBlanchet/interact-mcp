@@ -10,7 +10,6 @@ from interact_mcp.state import (
     annotate_screenshot,
     dump_media,
     format_element_list,
-    match_refs,
 )
 
 
@@ -112,41 +111,3 @@ def test_format_element_list():
     assert "button" in text
 
 
-# --- match_refs ---
-
-
-def test_match_refs_pairs_by_name():
-    snapshot = '- button "Save" [ref=e1]\n- link "Home" [ref=e2]'
-    raw_boxes = [
-        {"tag": "button", "name": "Save", "x": 0, "y": 0, "width": 60, "height": 30},
-        {"tag": "a", "name": "Home", "x": 100, "y": 0, "width": 50, "height": 30},
-    ]
-    elements = match_refs(snapshot, raw_boxes)
-    assert len(elements) == 2
-    assert elements[0].ref == "e1"
-    assert elements[0].role == "button"
-    assert elements[0].index == 1
-    assert elements[1].ref == "e2"
-    assert elements[1].index == 2
-
-
-def test_match_refs_duplicate_names():
-    snapshot = '- button "Close" [ref=e5]\n- button "Close" [ref=e6]'
-    raw_boxes = [
-        {"tag": "button", "name": "Close", "x": 0, "y": 0, "width": 30, "height": 30},
-        {"tag": "button", "name": "Close", "x": 40, "y": 0, "width": 30, "height": 30},
-    ]
-    elements = match_refs(snapshot, raw_boxes)
-    assert elements[0].ref == "e5"
-    assert elements[1].ref == "e6"
-
-
-def test_match_refs_unmatched_box_gets_none_ref():
-    snapshot = '- button "Save" [ref=e1]'
-    raw_boxes = [
-        {"tag": "button", "name": "Save", "x": 0, "y": 0, "width": 60, "height": 30},
-        {"tag": "input", "name": "Email", "x": 0, "y": 40, "width": 100, "height": 30},
-    ]
-    elements = match_refs(snapshot, raw_boxes)
-    assert elements[0].ref == "e1"
-    assert elements[1].ref is None

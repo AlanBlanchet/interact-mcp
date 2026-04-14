@@ -5,7 +5,7 @@ import httpx
 from pydantic import BaseModel, Field, field_validator, model_validator
 from playwright.async_api import Page
 
-from interact_mcp.state import aria_locator
+from interact_mcp.state import ref_locator
 
 _LIST_CLICKABLE_JS = (Path(__file__).parent / "js" / "list_clickable.js").read_text()
 
@@ -30,11 +30,10 @@ class TargetedAction(Action):
         return self
 
     def _locator(self, page: Page):
-        return page.locator(aria_locator(self.ref)) if self.ref else page.locator(self.selector)
+        return page.locator(ref_locator(self.ref)) if self.ref else page.locator(self.selector)
 
 
-class ClickAction(TargetedAction):
-    type: Literal["click"] = "click"
+class _CoordinateTargetMixin(TargetedAction):
     x: int | None = None
     y: int | None = None
 
@@ -44,6 +43,10 @@ class ClickAction(TargetedAction):
             raise ValueError("Provide ref, selector, or both x and y")
         return self
 
+
+class ClickAction(_CoordinateTargetMixin):
+    type: Literal["click"] = "click"
+
     async def execute(self, page: Page):
         if self.ref:
             await self._locator(page).click()
@@ -51,6 +54,19 @@ class ClickAction(TargetedAction):
             await page.click(self.selector)
         else:
             await page.mouse.click(self.x, self.y)
+
+
+class HoverAction(_CoordinateTargetMixin):
+    type: Literal["hover"] = "hover"
+    mutates: ClassVar[bool] = False
+
+    async def execute(self, page: Page):
+        if self.ref:
+            await self._locator(page).hover()
+        elif self.selector:
+            await page.hover(self.selector)
+        else:
+            await page.mouse.move(self.x, self.y)
 
 
 class TypeTextAction(TargetedAction):
@@ -91,7 +107,7 @@ class ScrollAction(Action):
 
 
 async def _ref_center(page: Page, ref: str) -> tuple[float, float]:
-    box = await page.locator(aria_locator(ref)).bounding_box()
+    box = await page.locator(ref_locator(ref)).bounding_box()
     return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
 
 
@@ -103,6 +119,7 @@ class DragAction(Action):
     to_y: int | None = None
     from_ref: str | None = None
     to_ref: str | None = None
+    steps: int = 1
 
     @model_validator(mode="after")
     def _require_targets(self):
@@ -125,7 +142,7 @@ class DragAction(Action):
 
         await page.mouse.move(fx, fy)
         await page.mouse.down()
-        await page.mouse.move(tx, ty)
+        await page.mouse.move(tx, ty, steps=self.steps)
         await page.mouse.up()
 
 
@@ -209,6 +226,14 @@ class UploadFileAction(TargetedAction):
         await target.set_input_files(self.path)
 
 
+class KeyPressAction(Action):
+    type: Literal["key_press"] = "key_press"
+    key: str
+
+    async def execute(self, page: Page):
+        await page.keyboard.press(self.key)
+
+
 class AnnotateAction(ObservationAction):
     type: Literal["annotate"] = "annotate"
     scope: str | None = None
@@ -259,11 +284,13 @@ class HttpRequestAction(ObservationAction):
 
 AnyAction = Annotated[
     ClickAction
+    | HoverAction
     | TypeTextAction
     | ScrollAction
     | DragAction
     | NavigateAction
     | EvaluateJsAction
+    | KeyPressAction
     | ScreenshotAction
     | WaitForAction
     | ListClickableAction

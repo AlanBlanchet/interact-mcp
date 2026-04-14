@@ -11,11 +11,10 @@ from pydantic import BaseModel
 from playwright.async_api import Page
 
 _ANNOTATION_COLORS = ["#FF4444", "#44AA44", "#4444FF", "#FF8800", "#AA44AA", "#00AAAA"]
-_ARIA_REF_RE = re.compile(r'- \w[\w-]*(?: "([^"]*)")?\s\[ref=(e\d+)[^\]]*\]')
 
 
-def aria_locator(ref: str) -> str:
-    return f"aria-ref:{ref}"
+def ref_locator(ref: str) -> str:
+    return f'[data-interact-ref="{ref}"]'
 
 
 class InteractiveElement(BaseModel):
@@ -40,7 +39,7 @@ class InteractiveElement(BaseModel):
     def playwright_ref(self) -> str | None:
         if self.ref is None:
             return None
-        return aria_locator(self.ref)
+        return ref_locator(self.ref)
 
 
 def annotate_screenshot(
@@ -68,33 +67,6 @@ def format_element_list(elements: list[InteractiveElement]) -> str:
     return "\n".join(
         f"  [{el.index}] {el.role}: {el.name!r}  ref={el.ref}" for el in elements
     )
-
-
-def match_refs(aria_snapshot: str, raw_boxes: list[dict]) -> list[InteractiveElement]:
-    name_to_refs: dict[str, list[str]] = {}
-    for name_str, ref_str in _ARIA_REF_RE.findall(aria_snapshot):
-        name_to_refs.setdefault(name_str, []).append(ref_str)
-
-    name_counter: dict[str, int] = {}
-    elements: list[InteractiveElement] = []
-    for i, raw in enumerate(raw_boxes):
-        name = raw["name"]
-        idx = name_counter.get(name, 0)
-        name_counter[name] = idx + 1
-        refs = name_to_refs.get(name, [])
-        elements.append(
-            InteractiveElement(
-                index=i + 1,
-                ref=refs[idx] if idx < len(refs) else None,
-                role=raw["tag"],
-                name=name,
-                x=raw["x"],
-                y=raw["y"],
-                width=raw["width"],
-                height=raw["height"],
-            )
-        )
-    return elements
 
 
 def dump_media(data: bytes, label: str, dump_dir: Path, ext: str = "png"):

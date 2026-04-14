@@ -19,6 +19,7 @@ class Config(BaseSettings):
     vision_api_key: str = ""
     vision_base_url: str | None = None
     headless: bool = True
+    slow_mo: int = 0
     browser_type: Literal["chromium", "firefox", "webkit"] = "chromium"
     viewport_width: int = 1280
     viewport_height: int = 720
