@@ -17,7 +17,12 @@ class MediaItem(BaseModel):
     mime_type: str = "image/png"
 
     @classmethod
-    def from_bytes(cls, raw: bytes, media_type: Literal["image", "video"] = "image", mime_type: str = "image/png"):
+    def from_bytes(
+        cls,
+        raw: bytes,
+        media_type: Literal["image", "video"] = "image",
+        mime_type: str = "image/png",
+    ):
         return cls(data=bytes_to_b64(raw), media_type=media_type, mime_type=mime_type)
 
 
@@ -35,9 +40,17 @@ def _extract_frames(video_base64: str, mime_type: str, fps: int = 1) -> list[str
         video_path = f"{tmpdir}/input.{ext}"
         Path(video_path).write_bytes(video_bytes)
         subprocess.run(
-            ["ffmpeg", "-y", "-i", video_path, "-vf", f"fps={fps}",
-             f"{tmpdir}/frame_%03d.jpg"],
-            check=True, capture_output=True,
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                video_path,
+                "-vf",
+                f"fps={fps}",
+                f"{tmpdir}/frame_%03d.jpg",
+            ],
+            check=True,
+            capture_output=True,
         )
         return [
             bytes_to_b64(fp.read_bytes())
@@ -47,12 +60,14 @@ def _extract_frames(video_base64: str, mime_type: str, fps: int = 1) -> list[str
 
 def _video_content(item: MediaItem, model: str) -> list[dict]:
     if model.startswith("gemini"):
-        return [{
-            "type": "file",
-            "file": {
-                "file_data": f"data:{item.mime_type};base64,{item.data}",
-            },
-        }]
+        return [
+            {
+                "type": "file",
+                "file": {
+                    "file_data": f"data:{item.mime_type};base64,{item.data}",
+                },
+            }
+        ]
     frames = _extract_frames(item.data, item.mime_type)
     return [
         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{f}"}}
@@ -60,14 +75,14 @@ def _video_content(item: MediaItem, model: str) -> list[dict]:
     ]
 
 
-async def _vision_completion(messages: list[dict], model: str, api_key: str, base_url: str | None) -> str:
+async def _vision_completion(
+    messages: list[dict], model: str, base_url: str | None
+) -> str:
     kwargs: dict = {
         "model": model,
         "messages": messages,
         "max_tokens": 200,
     }
-    if api_key:
-        kwargs["api_key"] = api_key
     if base_url:
         kwargs["api_base"] = base_url
 
@@ -91,8 +106,7 @@ async def analyze_media(
 ) -> str:
     has_video = any(m.media_type == "video" for m in media)
     model, base_url = config.model_for("video" if has_video else "image")
-    key = config.api_key_for(model)
-    if not key:
+    if not litellm.validate_environment(model)["keys_in_environment"]:
         return context
     content: list[dict] = [{"type": "text", "text": context}]
     for item in media:
@@ -100,12 +114,15 @@ async def analyze_media(
             content.append(_image_content(item))
         else:
             content.extend(_video_content(item, model))
-    return await _vision_completion(_build_messages(content, prompt), model, key, base_url)
+    return await _vision_completion(
+        _build_messages(content, prompt), model, base_url
+    )
 
 
-async def analyze_screenshot(state: PageState, config: Config, prompt: str | None = None) -> str:
-    key = config.api_key_for(config.image_model)
-    if not key:
+async def analyze_screenshot(
+    state: PageState, config: Config, prompt: str | None = None
+) -> str:
+    if not litellm.validate_environment(config.image_model)["keys_in_environment"]:
         return state.text_summary()
     media = [MediaItem(data=state.screenshot_base64)]
     return await analyze_media(

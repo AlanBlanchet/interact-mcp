@@ -1,5 +1,5 @@
 from interact_mcp.browser import BrowserManager
-from interact_mcp.config import Config
+from interact_mcp.config import LOG_MAXLEN, Config
 from interact_mcp.state import InteractiveElement, ref_locator
 
 
@@ -80,3 +80,47 @@ def test_element_center_coords():
 
 def test_ref_locator():
     assert ref_locator("e5") == '[data-interact-ref="e5"]'
+
+
+# --- drain_network_log / drain_console_log ---
+
+
+def test_drain_network_log_returns_entries():
+    mgr = BrowserManager(Config())
+    mgr._network_log.append({"method": "GET", "url": "https://example.com"})
+    mgr._network_log.append({"method": "POST", "url": "https://example.com/api"})
+    entries = mgr.drain_network_log()
+    assert len(entries) == 2
+    assert entries[0]["method"] == "GET"
+    assert len(mgr._network_log) == 2  # not cleared
+
+
+def test_drain_network_log_clear():
+    mgr = BrowserManager(Config())
+    mgr._network_log.append({"method": "GET", "url": "https://example.com"})
+    entries = mgr.drain_network_log(clear=True)
+    assert len(entries) == 1
+    assert len(mgr._network_log) == 0
+
+
+def test_drain_console_log_returns_entries():
+    mgr = BrowserManager(Config())
+    mgr._console_log.append({"level": "log", "text": "hello"})
+    entries = mgr.drain_console_log()
+    assert len(entries) == 1
+    assert entries[0]["text"] == "hello"
+    assert len(mgr._console_log) == 1  # not cleared
+
+
+def test_drain_console_log_clear():
+    mgr = BrowserManager(Config())
+    mgr._console_log.append({"level": "error", "text": "oops"})
+    entries = mgr.drain_console_log(clear=True)
+    assert len(entries) == 1
+    assert len(mgr._console_log) == 0
+
+
+def test_log_deque_maxlen():
+    mgr = BrowserManager(Config())
+    assert mgr._network_log.maxlen == LOG_MAXLEN
+    assert mgr._console_log.maxlen == LOG_MAXLEN

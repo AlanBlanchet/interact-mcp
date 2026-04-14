@@ -17,7 +17,7 @@ from interact_mcp.actions import (
     SwitchTabAction,
 )
 from interact_mcp.browser import BrowserManager, SessionRegistry
-from interact_mcp.config import Config
+from interact_mcp.config import DEFAULT_LIMIT, Config
 from interact_mcp.state import (
     InteractiveElement,
     PageState,
@@ -69,10 +69,13 @@ async def _capture(mgr: BrowserManager, scope: str | None = None, tab: int = 0):
 
 
 async def _annotate_page(
-    mgr: BrowserManager, tab: int = 0, scope: str | None = None
+    mgr: BrowserManager,
+    tab: int = 0,
+    scope: str | None = None,
+    limit: int = DEFAULT_LIMIT,
 ) -> tuple[bytes, list[InteractiveElement]]:
     page = await mgr.get_page(tab)
-    raw_boxes = await page.evaluate(_ANNOTATE_JS, scope)
+    raw_boxes = await page.evaluate(_ANNOTATE_JS, {"scope": scope, "limit": limit})
     elements = [
         InteractiveElement(
             index=i + 1,
@@ -95,15 +98,16 @@ async def _annotate_and_describe(
     tab: int = 0,
     scope: str | None = None,
     query: str | None = None,
+    limit: int = DEFAULT_LIMIT,
 ) -> str:
-    annotated_bytes, elements = await _annotate_page(mgr, tab, scope)
+    annotated_bytes, elements = await _annotate_page(mgr, tab, scope, limit)
     mgr.set_element_map(tab, elements)
     _maybe_dump(annotated_bytes, "annotated")
     element_list = format_element_list(elements)
     context = (
         f"Annotated page with {len(elements)} interactive elements:\n{element_list}"
     )
-    if query and config.api_key_for(config.image_model):
+    if query:
         media = [MediaItem.from_bytes(annotated_bytes)]
         return await analyze_media(media, context, config, query)
     return context
@@ -205,7 +209,7 @@ async def run_actions(
 
         if isinstance(action, AnnotateAction):
             report = await _annotate_and_describe(
-                mgr, current_tab, action.scope, action.query
+                mgr, current_tab, action.scope, action.query, action.limit
             )
             step_reports.append(_step(i, action.type, report))
             final = await _capture(mgr, scope=action.scope, tab=current_tab)
@@ -272,7 +276,9 @@ async def run_actions(
     else:
         final_summary = f"{final.title} — {final.url}\n{final.visible_text[:500]}"
 
-    return _session_response(session, "\n".join(step_reports) + f"\n\n---\nFinal state: {final_summary}")
+    return _session_response(
+        session, "\n".join(step_reports) + f"\n\n---\nFinal state: {final_summary}"
+    )
 
 
 @mcp.tool()
@@ -289,6 +295,7 @@ async def screenshot(
 async def get_interactive_elements(
     scope: str | None = None,
     query: str | None = None,
+    limit: int = DEFAULT_LIMIT,
     tab: int = 0,
     session: str = _DEFAULT_SESSION,
 ) -> str:
@@ -298,10 +305,13 @@ async def get_interactive_elements(
     Returns a numbered list with ref, role, and name for each element.
     Use ref values in subsequent click, type_text, hover, drag, or upload_file actions.
     scope: CSS selector to restrict to a page sub-tree.
+    limit: Maximum number of elements to return.
     With query, also returns a vision analysis of the annotated screenshot.
     """
     mgr = _sessions.get(session)
-    return _session_response(session, await _annotate_and_describe(mgr, tab, scope, query))
+    return _session_response(
+        session, await _annotate_and_describe(mgr, tab, scope, query, limit)
+    )
 
 
 @mcp.tool()
@@ -311,12 +321,13 @@ async def get_page_state(
     """Get current page URL, title, accessibility tree, focused element, and visible text. scope: CSS selector to restrict to a page sub-tree."""
     mgr = _sessions.get(session)
     state = await _capture(mgr, scope)
-    return _session_response(session,
+    return _session_response(
+        session,
         f"URL: {state.url}\n"
         f"Title: {state.title}\n"
         f"Focused: {state.focused_element}\n\n"
         f"Accessibility Tree:\n{state.accessibility_tree}\n\n"
-        f"Visible Text:\n{state.visible_text}"
+        f"Visible Text:\n{state.visible_text}",
     )
 
 
@@ -355,9 +366,7 @@ async def load_session(path: str, session: str = _DEFAULT_SESSION) -> str:
 
 
 @mcp.tool()
-async def download_asset(
-    url: str, path: str, session: str = _DEFAULT_SESSION
-) -> str:
+async def download_asset(url: str, path: str, session: str = _DEFAULT_SESSION) -> str:
     """Download a URL to a local file path. Uses the browser session's cookies for authenticated downloads."""
     mgr = _sessions.get(session)
     page = await mgr.get_page()
@@ -370,28 +379,32 @@ async def download_asset(
 
 @mcp.tool()
 async def get_network_log(
-    clear: bool = False, session: str = _DEFAULT_SESSION
+    clear: bool = False, limit: int = DEFAULT_LIMIT, session: str = _DEFAULT_SESSION
 ) -> str:
-    """Return captured network requests (last 100). Set clear=True to flush the log after reading."""
+    """Return captured network requests (last `limit` entries). Set clear=True to flush the log after reading."""
     mgr = _sessions.get(session)
     entries = mgr.drain_network_log(clear)
+    entries = entries[-limit:]
     if not entries:
         return _session_response(session, "No network requests captured.")
     lines = []
     for e in entries:
         status = e.get("status", "pending")
         ctype = e.get("content_type", "")
-        lines.append(f"{e['method']} {status} {e['url']}" + (f" ({ctype})" if ctype else ""))
+        lines.append(
+            f"{e['method']} {status} {e['url']}" + (f" ({ctype})" if ctype else "")
+        )
     return _session_response(session, "\n".join(lines))
 
 
 @mcp.tool()
 async def get_console_log(
-    clear: bool = False, session: str = _DEFAULT_SESSION
+    clear: bool = False, limit: int = DEFAULT_LIMIT, session: str = _DEFAULT_SESSION
 ) -> str:
-    """Return captured browser console messages and errors (last 100). Set clear=True to flush after reading."""
+    """Return captured browser console messages and errors (last `limit` entries). Set clear=True to flush after reading."""
     mgr = _sessions.get(session)
     entries = mgr.drain_console_log(clear)
+    entries = entries[-limit:]
     if not entries:
         return _session_response(session, "No console messages captured.")
     lines = [f"[{e['level']}] {e['text']}" for e in entries]

@@ -235,12 +235,18 @@ def test_annotate_defaults():
     assert action.type == "annotate"
     assert action.scope is None
     assert action.query is None
+    assert action.limit == 50
     assert action.mutates is False
 
 
 def test_annotate_with_scope():
     action = AnnotateAction(scope="#main")
     assert action.scope == "#main"
+
+
+def test_annotate_custom_limit():
+    action = AnnotateAction(limit=10)
+    assert action.limit == 10
 
 
 def test_click_element_validates():
