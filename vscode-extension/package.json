@@ -1,0 +1,94 @@
+{
+  "name": "interact-mcp",
+  "displayName": "Interact MCP",
+  "description": "Configure and run the Interact MCP server for browser automation",
+  "version": "0.1.0",
+  "publisher": "interact-mcp",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.99.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "enabledApiProposals": [
+    "mcpServerDefinitionProvider"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "Interact MCP",
+      "properties": {
+        "interactMcp.imageModel": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "Vision model for screenshot/image analysis"
+        },
+        "interactMcp.videoModel": {
+          "type": "string",
+          "default": "gemini/gemini-2.0-flash",
+          "description": "Vision model for video analysis"
+        },
+        "interactMcp.imageBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Custom base URL for image model API"
+        },
+        "interactMcp.videoBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Custom base URL for video model API"
+        },
+        "interactMcp.headless": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run browser in headless mode"
+        },
+        "interactMcp.browserType": {
+          "type": "string",
+          "default": "chromium",
+          "enum": [
+            "chromium",
+            "firefox",
+            "webkit"
+          ],
+          "description": "Browser engine"
+        },
+        "interactMcp.viewportWidth": {
+          "type": "number",
+          "default": 1280,
+          "description": "Browser viewport width"
+        },
+        "interactMcp.viewportHeight": {
+          "type": "number",
+          "default": 720,
+          "description": "Browser viewport height"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "interactMcp.selectImageModel",
+        "title": "Interact MCP: Select Image Model"
+      },
+      {
+        "command": "interactMcp.selectVideoModel",
+        "title": "Interact MCP: Select Video Model"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./ && node -e \"try{require('fs').cpSync('src/models.json','out/models.json')}catch{}\"",
+    "watch": "tsc -watch -p ./",
+    "generate-models": "python scripts/generate-models.py"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/vscode": "^1.99.0",
+    "typescript": "^5.7.0"
+  }
+}
