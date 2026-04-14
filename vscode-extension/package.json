@@ -66,17 +66,23 @@
           "type": "number",
           "default": 720,
           "description": "Browser viewport height"
+        },
+        "interactMcp.videoFps": {
+          "type": "number",
+          "default": 5,
+          "description": "Frames per second for video capture"
+        },
+        "interactMcp.videoDuration": {
+          "type": "number",
+          "default": 3,
+          "description": "Duration in seconds for video capture"
         }
       }
     },
     "commands": [
       {
-        "command": "interactMcp.selectImageModel",
-        "title": "Interact MCP: Select Image Model"
-      },
-      {
-        "command": "interactMcp.selectVideoModel",
-        "title": "Interact MCP: Select Video Model"
+        "command": "interactMcp.selectModel",
+        "title": "Interact MCP: Select Model"
       }
     ]
   },
