@@ -4,6 +4,7 @@ import httpx
 from pydantic import BaseModel, Field, field_validator, model_validator
 from playwright.async_api import Page
 
+from interact_mcp.config import DEFAULT_LIMIT
 from interact_mcp.state import ref_locator
 
 
@@ -206,6 +207,7 @@ class AnnotateAction(ObservationAction):
     type: Literal["annotate"] = "annotate"
     scope: str | None = None
     query: str | None = None
+    limit: int = DEFAULT_LIMIT
 
 
 class ClickElementAction(Action):

@@ -1,15 +1,10 @@
-import os
 from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings
 
-_PROVIDERS = {
-    "openai":    (["gpt", "o1", "o3", "o4", "chatgpt", "openai"], ["OPENAI_API_KEY"]),
-    "anthropic": (["claude", "anthropic"],                         ["ANTHROPIC_API_KEY"]),
-    "gemini":    (["gemini"],                                      ["GEMINI_API_KEY"]),
-    "zai":       (["zai"],                                         ["ZAI_API_KEY", "Z_AI_API_KEY"]),
-}
+DEFAULT_LIMIT = 50
+LOG_MAXLEN = 1000
 
 
 class Config(BaseSettings):
@@ -32,13 +27,3 @@ class Config(BaseSettings):
         if media_type == "video":
             return self.video_model, self.video_base_url
         return self.image_model, self.image_base_url
-
-    def api_key_for(self, model: str):
-        for prefixes, env_vars in _PROVIDERS.values():
-            if any(model.startswith(p) for p in prefixes):
-                for env_var in env_vars:
-                    key = os.environ.get(env_var, "")
-                    if key:
-                        return key
-                return ""
-        return ""

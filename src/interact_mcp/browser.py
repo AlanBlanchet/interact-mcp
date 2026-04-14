@@ -4,7 +4,7 @@ from datetime import datetime
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
-from interact_mcp.config import Config
+from interact_mcp.config import LOG_MAXLEN, Config
 from interact_mcp.state import InteractiveElement
 
 
@@ -16,8 +16,8 @@ class BrowserManager:
         self._context: BrowserContext | None = None
         # TODO: element map may go stale after mutating actions (click, navigate, etc.)
         self._element_map: dict[int, list[InteractiveElement]] = {}
-        self._network_log: deque[dict] = deque(maxlen=100)
-        self._console_log: deque[dict] = deque(maxlen=100)
+        self._network_log: deque[dict] = deque(maxlen=LOG_MAXLEN)
+        self._console_log: deque[dict] = deque(maxlen=LOG_MAXLEN)
 
     def set_element_map(self, tab: int, elements: list[InteractiveElement]):
         self._element_map[tab] = elements
@@ -116,18 +116,38 @@ class BrowserManager:
         page = await self._context.new_page()
         self._attach_page_listeners(page)
 
-
     def _attach_page_listeners(self, page: Page):
-        page.on("request", lambda req: self._network_log.append(
-            {"method": req.method, "url": req.url, "ts": datetime.now().isoformat(timespec="seconds")}
-        ))
+        page.on(
+            "request",
+            lambda req: self._network_log.append(
+                {
+                    "method": req.method,
+                    "url": req.url,
+                    "ts": datetime.now().isoformat(timespec="seconds"),
+                }
+            ),
+        )
         page.on("response", lambda resp: self._on_response(resp))
-        page.on("console", lambda msg: self._console_log.append(
-            {"level": msg.type, "text": msg.text, "ts": datetime.now().isoformat(timespec="seconds")}
-        ))
-        page.on("pageerror", lambda err: self._console_log.append(
-            {"level": "error", "text": str(err), "ts": datetime.now().isoformat(timespec="seconds")}
-        ))
+        page.on(
+            "console",
+            lambda msg: self._console_log.append(
+                {
+                    "level": msg.type,
+                    "text": msg.text,
+                    "ts": datetime.now().isoformat(timespec="seconds"),
+                }
+            ),
+        )
+        page.on(
+            "pageerror",
+            lambda err: self._console_log.append(
+                {
+                    "level": "error",
+                    "text": str(err),
+                    "ts": datetime.now().isoformat(timespec="seconds"),
+                }
+            ),
+        )
 
     def _on_response(self, response):
         url = response.url
