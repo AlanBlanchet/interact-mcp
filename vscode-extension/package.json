@@ -31,13 +31,13 @@
       "properties": {
         "interactMcp.imageModel": {
           "type": "string",
-          "default": "gpt-4.1",
-          "description": "Vision model for screenshot/image analysis"
+          "default": "",
+          "description": "Vision model for screenshot/image analysis (e.g. gpt-4.1, claude-sonnet-4-6)"
         },
         "interactMcp.videoModel": {
           "type": "string",
-          "default": "gemini/gemini-2.5-flash",
-          "description": "Vision model for video analysis"
+          "default": "",
+          "description": "Vision model for video analysis (e.g. gemini/gemini-2.5-flash)"
         },
         "interactMcp.imageBaseUrl": {
           "type": "string",

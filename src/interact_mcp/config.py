@@ -10,8 +10,8 @@ LOG_MAXLEN = 1000
 class Config(BaseSettings):
     model_config = {"env_prefix": "INTERACT_MCP_"}
 
-    image_model: str = "gpt-4.1"
-    video_model: str = "gemini/gemini-2.5-flash"
+    image_model: str = ""
+    video_model: str = ""
     image_base_url: str | None = None
     video_base_url: str | None = None
     headless: bool = True

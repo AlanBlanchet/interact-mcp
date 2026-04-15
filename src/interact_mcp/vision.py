@@ -106,6 +106,8 @@ async def analyze_media(
 ) -> str:
     has_video = any(m.media_type == "video" for m in media)
     model, base_url = config.model_for("video" if has_video else "image")
+    if not model:
+        return "[Vision not configured — select a model in VS Code settings or set INTERACT_MCP_IMAGE_MODEL]"
     if not litellm.validate_environment(model)["keys_in_environment"]:
         return f"[Vision unavailable — {model} API key not configured] {context}"
     content: list[dict] = [{"type": "text", "text": context}]
@@ -122,6 +124,8 @@ async def analyze_media(
 async def analyze_screenshot(
     state: PageState, config: Config, prompt: str | None = None
 ) -> str:
+    if not config.image_model:
+        return "[Vision not configured — select a model in VS Code settings or set INTERACT_MCP_IMAGE_MODEL]"
     if not litellm.validate_environment(config.image_model)["keys_in_environment"]:
         return f"[Vision unavailable — {config.image_model} API key not configured] {state.text_summary()}"
     media = [MediaItem(data=state.screenshot_base64)]
