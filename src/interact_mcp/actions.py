@@ -241,11 +241,12 @@ class HttpRequestAction(ObservationAction):
     body: str | None = None
 
     async def execute(self, page: Page):
+        headers = {"User-Agent": "interact-mcp/0.1", **self.headers}
         async with httpx.AsyncClient() as client:
             response = await client.request(
                 self.method,
                 self.url,
-                headers=self.headers,
+                headers=headers,
                 content=self.body,
                 timeout=30.0,
             )

@@ -445,11 +445,13 @@ async def record_window(
     title: str,
     query: str | None = None,
     duration: float | None = None,
+    fps: int | None = None,
     path: str | None = None,
 ) -> str:
     """Record a short video of a desktop window and analyze with vision.
 
     Works on X11 with ffmpeg. Records for a few seconds, then sends for video analysis.
+    If fps is provided, overrides the configured video_fps.
     If path is provided, also saves the mp4 to that file path.
     """
     result = _find_desktop_window(title)
@@ -458,7 +460,8 @@ async def record_window(
     win = result
 
     dur = duration or config.video_duration
-    video_bytes = desktop.capture_window_video(win.wid, dur, config.video_fps)
+    actual_fps = fps or config.video_fps
+    video_bytes = desktop.capture_window_video(win.wid, dur, actual_fps)
     _maybe_dump(video_bytes, f"video_{win.name}", ext="mp4")
     if path:
         Path(path).write_bytes(video_bytes)
