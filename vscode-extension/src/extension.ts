@@ -295,17 +295,35 @@ export async function activate(
   const log = vscode.window.createOutputChannel("Interact MCP");
   context.subscriptions.push(log);
 
+  function resolveCommand(): [string, string[]] {
+    const explicit = vscode.workspace
+      .getConfiguration(SETTING_SECTION)
+      .get<string>("projectPath") || "";
+    if (explicit) return ["uv", ["run", "--directory", explicit, "interact-mcp"]];
+
+    // Auto-detect workspace containing interact-mcp
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      try {
+        const fs = require("fs");
+        const pyproject = fs.readFileSync(
+          require("path").join(folder.uri.fsPath, "pyproject.toml"),
+          "utf8",
+        );
+        if (pyproject.includes('name = "interact-mcp"')) {
+          return ["uv", ["run", "--directory", folder.uri.fsPath, "interact-mcp"]];
+        }
+      } catch {}
+    }
+
+    return ["uvx", ["interact-mcp"]];
+  }
+
   try {
     const serverDef = (vscode.lm as any).registerMcpServerDefinitionProvider(
       "interact-mcp",
       {
         provideMcpServerDefinitions() {
-          const projectPath = vscode.workspace
-            .getConfiguration(SETTING_SECTION)
-            .get<string>("projectPath") || "";
-          const [cmd, args] = projectPath
-            ? ["uv", ["run", "--directory", projectPath, "interact-mcp"]]
-            : ["uvx", ["interact-mcp"]];
+          const [cmd, args] = resolveCommand();
           const env = buildEnv(settingKeys, keyManager, allEnvKeys);
           log.appendLine(`Starting: ${cmd} ${args.join(" ")}`);
           return [
