@@ -185,6 +185,8 @@ async def run_actions(
     for i, action in enumerate(actions):
         if isinstance(action, NewTabAction):
             idx = await mgr.new_tab(action.url)
+            current_tab = idx
+            page = await mgr.get_page(current_tab)
             step_reports.append(_step(i, action.type, f"opened tab {idx}"))
             continue
 

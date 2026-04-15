@@ -26,6 +26,11 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "interact-mcp"
+      }
+    ],
     "configuration": {
       "title": "Interact MCP",
       "properties": {
