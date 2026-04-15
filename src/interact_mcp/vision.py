@@ -81,7 +81,7 @@ async def _vision_completion(
     kwargs: dict = {
         "model": model,
         "messages": messages,
-        "max_tokens": 200,
+        "max_tokens": 2048,
     }
     if base_url:
         kwargs["api_base"] = base_url
