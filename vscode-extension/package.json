@@ -16,7 +16,7 @@
     "url": "https://github.com/AlanBlanchet/interact-mcp/issues"
   },
   "engines": {
-    "vscode": "^1.99.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Other"
@@ -25,9 +25,6 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
-  "enabledApiProposals": [
-    "mcpServerDefinitionProvider"
-  ],
   "contributes": {
     "configuration": {
       "title": "Interact MCP",
