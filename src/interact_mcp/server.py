@@ -285,10 +285,12 @@ async def run_actions(
 async def screenshot(
     query: str | None = None, scope: str | None = None, session: str = _DEFAULT_SESSION
 ) -> str:
-    """Capture the current page or a scoped element. scope is a CSS selector restricting to a page sub-tree. With query, returns vision analysis."""
+    """Capture the current page. Returns text page state (title, URL, visible text). With query, takes a screenshot and returns VLM visual analysis. scope: CSS selector to restrict to a sub-tree."""
     mgr = _sessions.get(session)
     state = await _capture(mgr, scope)
-    return _session_response(session, await _analyze(state, query))
+    if query:
+        return _session_response(session, await _analyze(state, query))
+    return _session_response(session, state.text_summary())
 
 
 @mcp.tool()
@@ -422,10 +424,7 @@ async def list_desktop_windows() -> str:
 
 @mcp.tool()
 async def analyze_window(title: str, query: str | None = None) -> str:
-    """Capture a desktop window by title substring and analyze with vision.
-
-    Works on X11. Captures the window screenshot and sends it for analysis.
-    """
+    """Capture a desktop window by title substring and analyze with vision. title: partial match of the window title (e.g. 'Firefox', 'Terminal'). query: what to look for or describe in the window. Works on X11."""
     result = _find_desktop_window(title)
     if isinstance(result, str):
         return result
