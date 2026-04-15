@@ -112,27 +112,33 @@ export function activate(context: vscode.ExtensionContext): void {
     .map((k) => k.slice(prefix.length));
 
   const emitter = new vscode.EventEmitter<void>();
+  context.subscriptions.push(emitter);
 
-  const serverDef = (vscode.lm as any).registerMcpServerDefinitionProvider(
-    "interact-mcp",
-    {
-      provideMcpServerDefinitions() {
-        return [
-          new (vscode as any).McpStdioServerDefinition(
-            "Interact MCP",
-            "uvx",
-            ["interact-mcp"],
-            buildEnv(settingKeys, modelsData),
-          ),
-        ];
+  try {
+    const serverDef = (vscode.lm as any).registerMcpServerDefinitionProvider(
+      "interact-mcp",
+      {
+        provideMcpServerDefinitions() {
+          return [
+            new (vscode as any).McpStdioServerDefinition(
+              "Interact MCP",
+              "uvx",
+              ["interact-mcp"],
+              buildEnv(settingKeys, modelsData),
+            ),
+          ];
+        },
+        onDidChangeMcpServerDefinitions: emitter.event,
       },
-      onDidChangeMcpServerDefinitions: emitter.event,
-    },
-  );
+    );
+    context.subscriptions.push(serverDef);
+  } catch {
+    vscode.window.showWarningMessage(
+      "Interact MCP: MCP server registration unavailable — update VS Code to 1.99+",
+    );
+  }
 
   context.subscriptions.push(
-    serverDef,
-    emitter,
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(SETTING_SECTION)) emitter.fire();
     }),
