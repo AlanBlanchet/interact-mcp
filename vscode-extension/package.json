@@ -1,9 +1,11 @@
 {
   "name": "interact-mcp",
   "displayName": "Interact MCP",
-  "description": "Configure and run the Interact MCP server for browser automation",
+  "description": "[Alpha] Configure and run the Interact MCP server for browser automation",
   "version": "0.1.0",
+  "preview": true,
   "publisher": "Interact",
+  "icon": "icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
