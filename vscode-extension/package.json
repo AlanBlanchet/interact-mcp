@@ -34,6 +34,11 @@
     "configuration": {
       "title": "Interact MCP",
       "properties": {
+        "interactMcp.projectPath": {
+          "type": "string",
+          "default": "",
+          "description": "Local project path for development (uses 'uv run' instead of 'uvx'). Leave empty when installed from PyPI."
+        },
         "interactMcp.imageModel": {
           "type": "string",
           "default": "",
