@@ -1,3 +1,4 @@
+import base64
 from contextlib import asynccontextmanager
 import json
 from collections.abc import AsyncIterator
@@ -45,6 +46,12 @@ def _find_desktop_window(title: str) -> desktop.DesktopWindow | str:
     return win
 
 
+def _save_to_path(path: str, data: bytes):
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(data)
+
+
 def _session_response(session: str, body: str) -> str:
     return f"[session: {session}]\n{body}"
 
@@ -52,6 +59,28 @@ def _session_response(session: str, body: str) -> str:
 def _maybe_dump(data: bytes, label: str, ext: str = "png"):
     if config.screenshot_dump_dir:
         dump_media(data, label, config.screenshot_dump_dir, ext=ext)
+
+
+def _dump_and_save(data: bytes, label: str, ext: str = "png", path: str | None = None):
+    _maybe_dump(data, label, ext=ext)
+    if path:
+        _save_to_path(path, data)
+
+
+async def _vlm(data: bytes, context: str, query: str | None = None,
+               media_type: str = "image", mime: str = "image/png") -> str:
+    return await analyze_media([MediaItem.from_bytes(data, media_type, mime)], context, config, query)
+
+
+async def _media_response(
+    data: bytes, label: str, context: str,
+    query: str | None = None, path: str | None = None,
+    media_type: str = "image", mime: str = "image/png", ext: str = "png",
+) -> str | None:
+    _dump_and_save(data, label, ext, path)
+    if not query:
+        return None
+    return await _vlm(data, context, query, media_type, mime)
 
 
 @asynccontextmanager
@@ -102,15 +131,12 @@ async def _annotate_and_describe(
 ) -> str:
     annotated_bytes, elements = await _annotate_page(mgr, tab, scope, limit)
     mgr.set_element_map(tab, elements)
-    _maybe_dump(annotated_bytes, "annotated")
     element_list = format_element_list(elements)
     context = (
         f"Annotated page with {len(elements)} interactive elements:\n{element_list}"
     )
-    if query:
-        media = [MediaItem.from_bytes(annotated_bytes)]
-        return await analyze_media(media, context, config, query)
-    return context
+    result = await _media_response(annotated_bytes, "annotated", context, query)
+    return result or context
 
 
 async def _analyze(state: PageState, query: str | None = None) -> str:
@@ -119,7 +145,7 @@ async def _analyze(state: PageState, query: str | None = None) -> str:
 
 async def _element_screenshot(
     mgr: BrowserManager, tab: int, selector: str | None, element: int | None,
-    query: str | None = None,
+    query: str | None = None, path: str | None = None,
 ) -> str:
     page = await mgr.get_page(tab)
 
@@ -149,10 +175,8 @@ async def _element_screenshot(
         png_bytes = await locator.screenshot(type="png")
     except Exception as e:
         return f"Cannot screenshot element: {e}"
-    _maybe_dump(png_bytes, "element")
-    if query:
-        return await analyze_media([MediaItem.from_bytes(png_bytes)], meta, config, query)
-    return meta
+    result = await _media_response(png_bytes, "element", meta, query, path)
+    return result or meta
 
 
 async def _wait(page: Page, condition: str | None):
@@ -330,21 +354,30 @@ async def screenshot(
     scope: str | None = None,
     selector: str | None = None,
     element: int | None = None,
+    path: str | None = None,
     session: str = _DEFAULT_SESSION,
 ) -> str:
     """Capture the current page or a specific element.
 
-    Without selector/element: captures full page.
-    With selector or element: captures only that element (cropped).
-    element: integer element index from get_interactive_elements (takes priority over selector).
-    selector: CSS selector to target a specific element.
-    query: when set, returns VLM visual analysis of the captured content.
-    scope: CSS selector to restrict text to a page sub-tree (ignored when selector/element is set).
+    Returns depend on parameters:
+    - No selector/element, no query: page title + visible text content.
+    - No selector/element, with query: full-page screenshot analyzed by VLM.
+    - With selector/element, no query: element metadata (tag/role, name/text, dimensions, position).
+    - With selector/element, with query: cropped element screenshot analyzed by VLM.
+
+    element: integer index from get_interactive_elements (priority over selector).
+    selector: CSS selector targeting one element.
+    query: question for VLM visual analysis of the captured content.
+    scope: CSS selector to restrict text extraction to a sub-tree (ignored when selector/element is set).
+    path: save the PNG screenshot to this file path.
     """
     mgr = _sessions.get(session)
     if element is not None or selector is not None:
-        return _session_response(session, await _element_screenshot(mgr, 0, selector, element, query))
+        return _session_response(session, await _element_screenshot(mgr, 0, selector, element, query, path))
     state = await _capture(mgr, scope)
+    if path:
+        png_bytes = base64.b64decode(state.screenshot_base64)
+        _save_to_path(path, png_bytes)
     if query:
         return _session_response(session, await _analyze(state, query))
     return _session_response(session, state.text_summary())
@@ -431,8 +464,7 @@ async def download_asset(url: str, path: str, session: str = _DEFAULT_SESSION) -
     page = await mgr.get_page()
     response = await page.context.request.get(url)
     data = await response.body()
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_bytes(data)
+    _save_to_path(path, data)
     return _session_response(session, f"Downloaded {len(data)} bytes to {path}")
 
 
@@ -488,11 +520,8 @@ async def analyze_window(title: str, query: str | None = None) -> str:
     win = result
 
     screenshot_bytes = desktop.capture_window(win.wid)
-    _maybe_dump(screenshot_bytes, win.name)
-
-    context = f"Desktop window: {win.name} ({win.w}x{win.h})"
-    media = [MediaItem.from_bytes(screenshot_bytes)]
-    return await analyze_media(media, context, config, query)
+    _dump_and_save(screenshot_bytes, win.name)
+    return await _vlm(screenshot_bytes, f"Desktop window: {win.name} ({win.w}x{win.h})", query)
 
 
 @mcp.tool()
@@ -506,6 +535,7 @@ async def record_window(
     """Record a short video of a desktop window and analyze with vision.
 
     Works on X11 with ffmpeg. Records for a few seconds, then sends for video analysis.
+    Returns early with no-motion message if the video is static and no query is provided.
     If fps is provided, overrides the configured video_fps.
     If path is provided, also saves the mp4 to that file path.
     """
@@ -517,13 +547,60 @@ async def record_window(
     dur = duration or config.video_duration
     actual_fps = fps or config.video_fps
     video_bytes = desktop.capture_window_video(win.wid, dur, actual_fps)
-    _maybe_dump(video_bytes, f"video_{win.name}", ext="mp4")
-    if path:
-        Path(path).write_bytes(video_bytes)
+    _dump_and_save(video_bytes, f"video_{win.name}", "mp4", path)
+
+    is_static = not desktop.detect_motion(video_bytes)
+    if is_static and not query:
+        return (
+            f"Recording captured but no motion detected — frames are identical. "
+            f"The window content did not change during the {dur}s recording."
+        )
 
     context = f"Desktop window recording: {win.name} ({win.w}x{win.h}, {dur}s)"
-    media = [MediaItem.from_bytes(video_bytes, "video", "video/mp4")]
-    return await analyze_media(media, context, config, query)
+    if is_static:
+        context = (
+            "WARNING: Recording appears static — no significant motion was detected "
+            "between frames. Describe only what you actually observe.\n" + context
+        )
+    return await _vlm(video_bytes, context, query, "video", "video/mp4")
+
+
+@mcp.tool()
+async def record_browser(
+    start: bool = True,
+    query: str | None = None,
+    path: str | None = None,
+    session: str = _DEFAULT_SESSION,
+) -> str:
+    """Record browser activity as video and optionally analyze with vision.
+
+    Two-step workflow:
+    1. record_browser(start=True) — begins recording. Returns confirmation.
+    2. Perform browser actions (navigate, click, type, etc.).
+    3. record_browser(start=False) — stops recording, returns video analysis.
+
+    start: True to begin recording, False to stop and export.
+    query: question for VLM analysis of the recording (only used when start=False).
+    path: save the video file to this path (only used when start=False).
+    """
+    mgr = _sessions.get(session)
+    if start:
+        url = await mgr.start_recording()
+        return _session_response(session, f"Recording started. Current URL: {url}")
+    video_bytes = await mgr.stop_recording()
+    if not video_bytes:
+        return _session_response(session, "Recording stopped but no video data captured.")
+    result = await _media_response(
+        video_bytes, "browser_recording", "Browser recording",
+        query, path, "video", "video/webm", "webm",
+    )
+    if result:
+        return _session_response(session, result)
+    size = len(video_bytes)
+    msg = f"Recording stopped. Video captured ({size} bytes)."
+    if path:
+        msg += f" Saved to {path}."
+    return _session_response(session, msg)
 
 
 def main():

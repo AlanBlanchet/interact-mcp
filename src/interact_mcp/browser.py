@@ -1,6 +1,8 @@
 import subprocess
+import tempfile
 from collections import deque
 from datetime import datetime
+from pathlib import Path
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
@@ -18,6 +20,7 @@ class BrowserManager:
         self._element_map: dict[int, list[InteractiveElement]] = {}
         self._network_log: deque[dict] = deque(maxlen=LOG_MAXLEN)
         self._console_log: deque[dict] = deque(maxlen=LOG_MAXLEN)
+        self._recording_dir: tempfile.TemporaryDirectory | None = None
 
     def set_element_map(self, tab: int, elements: list[InteractiveElement]):
         self._element_map[tab] = elements
@@ -72,6 +75,49 @@ class BrowserManager:
             await self._context.close()
         await self._new_context(state)
 
+    @property
+    def is_recording(self) -> bool:
+        return self._recording_dir is not None
+
+    async def start_recording(self) -> str:
+        if self._recording_dir:
+            raise RuntimeError("Already recording — call stop_recording first")
+        await self.ensure_ready()
+        page = self._context.pages[0] if self._context.pages else None
+        url = page.url if page and page.url != "about:blank" else None
+        cookies = await self._context.cookies() if self._context else []
+        await self._context.close()
+        self._recording_dir = tempfile.TemporaryDirectory()
+        await self._new_context(record_video_dir=self._recording_dir.name)
+        if cookies:
+            await self._context.add_cookies(cookies)
+        page = self._context.pages[0]
+        if url:
+            await page.goto(url)
+        return url or "about:blank"
+
+    async def stop_recording(self) -> bytes:
+        if not self._recording_dir:
+            raise RuntimeError("Not recording — call start_recording first")
+        page = self._context.pages[0] if self._context.pages else None
+        url = page.url if page and page.url != "about:blank" else None
+        cookies = await self._context.cookies() if self._context else []
+        await self._context.close()
+        self._context = None
+        video_files = sorted(Path(self._recording_dir.name).glob("*.webm"))
+        if not video_files:
+            video_files = sorted(Path(self._recording_dir.name).iterdir())
+        video_bytes = video_files[-1].read_bytes() if video_files else b""
+        self._recording_dir.cleanup()
+        self._recording_dir = None
+        await self._new_context()
+        if cookies:
+            await self._context.add_cookies(cookies)
+        page = self._context.pages[0]
+        if url:
+            await page.goto(url)
+        return video_bytes
+
     async def close(self):
         if self._browser:
             await self._browser.close()
@@ -81,13 +127,20 @@ class BrowserManager:
             await self._playwright.stop()
             self._playwright = None
 
-    def _context_kwargs(self) -> dict:
-        return {
+    def _context_kwargs(self, record_video_dir: str | None = None) -> dict:
+        kw: dict = {
             "viewport": {
                 "width": self._config.viewport_width,
                 "height": self._config.viewport_height,
             },
         }
+        if record_video_dir:
+            kw["record_video_dir"] = record_video_dir
+            kw["record_video_size"] = {
+                "width": self._config.viewport_width,
+                "height": self._config.viewport_height,
+            }
+        return kw
 
     def _install_browser(self):
         subprocess.run(
@@ -107,8 +160,8 @@ class BrowserManager:
             slow_mo=self._config.slow_mo,
         )
 
-    async def _new_context(self, storage_state: dict | None = None):
-        kwargs = self._context_kwargs()
+    async def _new_context(self, storage_state: dict | None = None, record_video_dir: str | None = None):
+        kwargs = self._context_kwargs(record_video_dir)
         if storage_state is not None:
             kwargs["storage_state"] = storage_state
         self._context = await self._browser.new_context(**kwargs)

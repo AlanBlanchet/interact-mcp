@@ -1,4 +1,5 @@
 from typing import Annotated, ClassVar, Literal
+from pathlib import Path
 
 import httpx
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -6,6 +7,8 @@ from playwright.async_api import Page
 
 from interact_mcp.config import DEFAULT_LIMIT
 from interact_mcp.state import ref_locator
+
+_DND_DISPATCH_JS = (Path(__file__).parent / "js" / "dnd_dispatch.js").read_text()
 
 
 class Action(BaseModel):
@@ -142,6 +145,10 @@ class DragAction(Action):
         await page.mouse.down()
         await page.mouse.move(tx, ty, steps=self.steps)
         await page.mouse.up()
+
+        await page.evaluate(
+            _DND_DISPATCH_JS, [float(fx), float(fy), float(tx), float(ty)]
+        )
 
 
 class NavigateAction(Action):

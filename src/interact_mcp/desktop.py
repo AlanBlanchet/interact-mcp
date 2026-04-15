@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from PIL import Image, ImageChops
 from pydantic import BaseModel, computed_field
 
 _MIN_AREA = 500
@@ -97,3 +98,33 @@ def window_listing(windows: list[DesktopWindow]) -> str:
     return "\n".join(
         f"  {w.name} ({w.w}x{w.h})" for w in sorted(windows, key=lambda w: w.name)
     )
+
+
+def detect_motion(video_bytes: bytes, threshold: float = 0.01) -> bool:
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            video_path = Path(tmpdir) / "input.mp4"
+            video_path.write_bytes(video_bytes)
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", str(video_path),
+                    "-vf", "select='eq(n\\,0)+eq(n\\,5)+eq(n\\,10)+eq(n\\,15)'",
+                    "-vsync", "vfr",
+                    str(Path(tmpdir) / "frame_%02d.png"),
+                ],
+                check=True, capture_output=True, timeout=15,
+            )
+            frames = sorted(Path(tmpdir).glob("frame_*.png"))
+            if len(frames) < 2:
+                return False
+            images = [Image.open(f).convert("L") for f in frames]
+            for a, b in zip(images, images[1:]):
+                diff = ImageChops.difference(a, b)
+                hist = diff.histogram()
+                total = sum(i * count for i, count in enumerate(hist))
+                mean_diff = total / (a.size[0] * a.size[1]) / 255.0
+                if mean_diff > threshold:
+                    return True
+            return False
+    except Exception:
+        return True
