@@ -296,28 +296,24 @@ export async function activate(
   context.subscriptions.push(log);
 
   try {
-    const cfg = vscode.workspace.getConfiguration(SETTING_SECTION);
-    const projectPath = cfg.get<string>("projectPath") || "";
-    let cmd: string;
-    let args: string[];
-    if (projectPath) {
-      cmd = "uv";
-      args = ["run", "--directory", projectPath, "interact-mcp"];
-    } else {
-      cmd = "uvx";
-      args = ["interact-mcp"];
-    }
-
     const serverDef = (vscode.lm as any).registerMcpServerDefinitionProvider(
       "interact-mcp",
       {
         provideMcpServerDefinitions() {
+          const projectPath = vscode.workspace
+            .getConfiguration(SETTING_SECTION)
+            .get<string>("projectPath") || "";
+          const [cmd, args] = projectPath
+            ? ["uv", ["run", "--directory", projectPath, "interact-mcp"]]
+            : ["uvx", ["interact-mcp"]];
+          const env = buildEnv(settingKeys, keyManager, allEnvKeys);
+          log.appendLine(`Starting: ${cmd} ${args.join(" ")}`);
           return [
             new (vscode as any).McpStdioServerDefinition(
               "Interact MCP",
               cmd,
               args,
-              buildEnv(settingKeys, keyManager, allEnvKeys),
+              env,
             ),
           ];
         },
