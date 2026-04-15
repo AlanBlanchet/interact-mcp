@@ -299,22 +299,28 @@ export async function activate(
     const explicit = vscode.workspace
       .getConfiguration(SETTING_SECTION)
       .get<string>("projectPath") || "";
-    if (explicit) return ["uv", ["run", "--directory", explicit, "interact-mcp"]];
-
-    // Auto-detect workspace containing interact-mcp
-    for (const folder of vscode.workspace.workspaceFolders ?? []) {
-      try {
-        const fs = require("fs");
-        const pyproject = fs.readFileSync(
-          require("path").join(folder.uri.fsPath, "pyproject.toml"),
-          "utf8",
-        );
-        if (pyproject.includes('name = "interact-mcp"')) {
-          return ["uv", ["run", "--directory", folder.uri.fsPath, "interact-mcp"]];
-        }
-      } catch {}
+    if (explicit) {
+      log.appendLine(`Using explicit projectPath: ${explicit}`);
+      return ["uv", ["run", "--directory", explicit, "interact-mcp"]];
     }
 
+    // Auto-detect workspace containing interact-mcp
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    log.appendLine(`Scanning ${folders.length} workspace folder(s)`);
+    for (const folder of folders) {
+      const p = require("path").join(folder.uri.fsPath, "pyproject.toml");
+      try {
+        const pyproject = require("fs").readFileSync(p, "utf8") as string;
+        if (pyproject.includes('name = "interact-mcp"')) {
+          log.appendLine(`Auto-detected project at ${folder.uri.fsPath}`);
+          return ["uv", ["run", "--directory", folder.uri.fsPath, "interact-mcp"]];
+        }
+      } catch (err) {
+        log.appendLine(`Skip ${p}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    log.appendLine("No local project found, falling back to uvx");
     return ["uvx", ["interact-mcp"]];
   }
 
