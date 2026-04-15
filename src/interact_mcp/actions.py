@@ -164,6 +164,8 @@ class ScreenshotAction(ObservationAction):
     type: Literal["screenshot"] = "screenshot"
     scope: str | None = None
     query: str | None = None
+    selector: str | None = None
+    element: int | None = None
 
 
 class WaitForAction(ObservationAction):

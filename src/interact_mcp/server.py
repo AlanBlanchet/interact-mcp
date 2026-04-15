@@ -117,6 +117,44 @@ async def _analyze(state: PageState, query: str | None = None) -> str:
     return await analyze_screenshot(state, config, query)
 
 
+async def _element_screenshot(
+    mgr: BrowserManager, tab: int, selector: str | None, element: int | None,
+    query: str | None = None,
+) -> str:
+    page = await mgr.get_page(tab)
+
+    if element is not None:
+        el = mgr.get_element(element, tab)
+        if el is None:
+            return f"Element {element} not found — run get_interactive_elements first"
+        if not el.playwright_ref:
+            return f"Element {element} has no ref attribute — cannot screenshot"
+        locator = page.locator(el.playwright_ref)
+        meta = f"[{el.index}] {el.role}: {el.name!r} ({el.width:.0f}x{el.height:.0f} at {el.x:.0f},{el.y:.0f})"
+    else:
+        locator = page.locator(selector)
+        count = await locator.count()
+        if count == 0:
+            return f"No element matches '{selector}'"
+        if count > 1:
+            return f"'{selector}' matches {count} elements — use get_interactive_elements and element for precision"
+        tag = await locator.evaluate("el => el.tagName.toLowerCase()")
+        text = (await locator.inner_text())[:200]
+        box = await locator.bounding_box()
+        meta = f"{tag}: {text!r}"
+        if box:
+            meta += f" ({box['width']:.0f}x{box['height']:.0f} at {box['x']:.0f},{box['y']:.0f})"
+
+    try:
+        png_bytes = await locator.screenshot(type="png")
+    except Exception as e:
+        return f"Cannot screenshot element: {e}"
+    _maybe_dump(png_bytes, "element")
+    if query:
+        return await analyze_media([MediaItem.from_bytes(png_bytes)], meta, config, query)
+    return meta
+
+
 async def _wait(page: Page, condition: str | None):
     if condition is None:
         return
@@ -241,13 +279,16 @@ async def run_actions(
             continue
 
         if isinstance(action, ScreenshotAction):
-            state = await _capture(mgr, action.scope, current_tab)
-            if action.query:
-                report = await _analyze(state, action.query)
+            if action.element is not None or action.selector is not None:
+                report = await _element_screenshot(mgr, current_tab, action.selector, action.element, action.query)
             else:
-                report = f"{state.title} — {state.visible_text[:300]}"
+                state = await _capture(mgr, action.scope, current_tab)
+                if action.query:
+                    report = await _analyze(state, action.query)
+                else:
+                    report = f"{state.title} — {state.visible_text[:300]}"
+                final = state
             step_reports.append(_step(i, action.type, report))
-            final = state
             continue
 
         if not action.mutates:
@@ -285,10 +326,24 @@ async def run_actions(
 
 @mcp.tool()
 async def screenshot(
-    query: str | None = None, scope: str | None = None, session: str = _DEFAULT_SESSION
+    query: str | None = None,
+    scope: str | None = None,
+    selector: str | None = None,
+    element: int | None = None,
+    session: str = _DEFAULT_SESSION,
 ) -> str:
-    """Capture the current page. Returns text page state (title, URL, visible text). With query, takes a screenshot and returns VLM visual analysis. scope: CSS selector to restrict to a sub-tree."""
+    """Capture the current page or a specific element.
+
+    Without selector/element: captures full page.
+    With selector or element: captures only that element (cropped).
+    element: integer element index from get_interactive_elements (takes priority over selector).
+    selector: CSS selector to target a specific element.
+    query: when set, returns VLM visual analysis of the captured content.
+    scope: CSS selector to restrict text to a page sub-tree (ignored when selector/element is set).
+    """
     mgr = _sessions.get(session)
+    if element is not None or selector is not None:
+        return _session_response(session, await _element_screenshot(mgr, 0, selector, element, query))
     state = await _capture(mgr, scope)
     if query:
         return _session_response(session, await _analyze(state, query))
