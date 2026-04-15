@@ -334,7 +334,7 @@ export async function activate(
           log.appendLine(`Starting: ${cmd} ${args.join(" ")}`);
           return [
             new (vscode as any).McpStdioServerDefinition(
-              "Interact MCP",
+              "Interact",
               cmd,
               args,
               env,
