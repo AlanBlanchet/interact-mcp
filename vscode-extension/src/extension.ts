@@ -292,6 +292,9 @@ export async function activate(
     }),
   );
 
+  const log = vscode.window.createOutputChannel("Interact MCP");
+  context.subscriptions.push(log);
+
   try {
     const serverDef = (vscode.lm as any).registerMcpServerDefinitionProvider(
       "interact-mcp",
@@ -310,9 +313,12 @@ export async function activate(
       },
     );
     context.subscriptions.push(serverDef);
-  } catch {
+    log.appendLine("MCP server definition registered");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.appendLine(`MCP registration failed: ${msg}`);
     vscode.window.showWarningMessage(
-      "Interact MCP: MCP server registration unavailable — update VS Code to 1.99+",
+      `Interact MCP: MCP server registration failed — ${msg}`,
     );
   }
 
