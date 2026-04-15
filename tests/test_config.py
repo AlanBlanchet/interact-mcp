@@ -18,8 +18,8 @@ def _clean_env(monkeypatch):
 
 def test_defaults():
     cfg = Config()
-    assert cfg.image_model == "gpt-4o"
-    assert cfg.video_model == "gemini/gemini-2.0-flash"
+    assert cfg.image_model == "gpt-4.1"
+    assert cfg.video_model == "gemini/gemini-2.5-flash"
     assert cfg.image_base_url is None
     assert cfg.video_base_url is None
     assert cfg.headless is True
