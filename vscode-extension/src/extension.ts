@@ -16,6 +16,46 @@ interface ModelSettingItem extends vscode.QuickPickItem {
   settingKey: string;
 }
 
+class KeyManager {
+  private cache = new Map<string, string>();
+
+  constructor(private secrets: vscode.SecretStorage) {}
+
+  async loadAll(allEnvKeys: string[]): Promise<void> {
+    for (const key of allEnvKeys) {
+      const val = await this.secrets.get(key);
+      if (val) this.cache.set(key, val);
+    }
+  }
+
+  get(key: string): string | undefined {
+    return this.cache.get(key);
+  }
+
+  async set(key: string, value: string): Promise<void> {
+    await this.secrets.store(key, value);
+    this.cache.set(key, value);
+  }
+
+  async remove(key: string): Promise<void> {
+    await this.secrets.delete(key);
+    this.cache.delete(key);
+  }
+
+  syncCache(key: string, value: string | undefined): void {
+    if (value) this.cache.set(key, value);
+    else this.cache.delete(key);
+  }
+
+  entries(): [string, string][] {
+    return [...this.cache.entries()];
+  }
+
+  missingKeys(required: string[]): string[] {
+    return required.filter((k) => !this.cache.has(k));
+  }
+}
+
 function settingToEnv(key: string): string {
   return ENV_PREFIX + key.replace(/[A-Z]/g, (c) => "_" + c).toUpperCase();
 }
@@ -24,17 +64,19 @@ function formatLabel(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
 }
 
-function filterEnv(env: NodeJS.ProcessEnv): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) {
-    if (v !== undefined) result[k] = v;
-  }
-  return result;
-}
-
-function buildEnv(settingKeys: string[]): Record<string, string> {
+function buildEnv(
+  settingKeys: string[],
+  keyManager: KeyManager,
+  allEnvKeys: Set<string>,
+): Record<string, string> {
   const cfg = vscode.workspace.getConfiguration(SETTING_SECTION);
   const env: Record<string, string> = {};
+
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && !allEnvKeys.has(k)) {
+      env[k] = v;
+    }
+  }
 
   for (const key of settingKeys) {
     const value = cfg.get(key);
@@ -43,12 +85,61 @@ function buildEnv(settingKeys: string[]): Record<string, string> {
       typeof value === "boolean" ? (value ? "true" : "false") : String(value);
   }
 
-  return { ...filterEnv(process.env), ...env };
+  for (const [k, v] of keyManager.entries()) {
+    env[k] = v;
+  }
+
+  return env;
+}
+
+function providerOf(
+  model: string,
+  modelsData: ModelsData,
+): string | undefined {
+  for (const [provider, info] of Object.entries(modelsData.providers)) {
+    if (info.models.includes(model)) return provider;
+  }
+}
+
+async function ensureKeys(
+  provider: string,
+  modelsData: ModelsData,
+  keyManager: KeyManager,
+  emitter: vscode.EventEmitter<void>,
+): Promise<boolean> {
+  const info = modelsData.providers[provider];
+  if (!info) return true;
+  const missing = keyManager.missingKeys(info.envKeys);
+  for (const key of missing) {
+    if (process.env[key]) {
+      const use = await vscode.window.showInformationMessage(
+        `Found ${key} in your environment. Use it?`,
+        "Yes",
+        "No",
+      );
+      if (use === "Yes") {
+        await keyManager.set(key, process.env[key]!);
+        emitter.fire();
+        continue;
+      }
+    }
+    const value = await vscode.window.showInputBox({
+      prompt: `Enter your ${key}`,
+      password: /KEY|SECRET|TOKEN/i.test(key),
+      ignoreFocusOut: true,
+    });
+    if (!value) return false;
+    await keyManager.set(key, value);
+    emitter.fire();
+  }
+  return true;
 }
 
 async function selectModel(
   settingKeys: string[],
   modelsData: ModelsData,
+  keyManager: KeyManager,
+  emitter: vscode.EventEmitter<void>,
 ): Promise<void> {
   const modelKeys = settingKeys.filter((k) => k.endsWith("Model"));
   if (!modelKeys.length) return;
@@ -85,19 +176,104 @@ async function selectModel(
     matchOnDescription: true,
   });
 
-  if (picked) {
-    await vscode.workspace
-      .getConfiguration(SETTING_SECTION)
-      .update(settingKey, picked.label, vscode.ConfigurationTarget.Global);
+  if (!picked) return;
+
+  await vscode.workspace
+    .getConfiguration(SETTING_SECTION)
+    .update(settingKey, picked.label, vscode.ConfigurationTarget.Global);
+
+  const provider = providerOf(picked.label, modelsData);
+  if (provider) {
+    await ensureKeys(provider, modelsData, keyManager, emitter);
   }
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+async function manageApiKeys(
+  keyManager: KeyManager,
+  modelsData: ModelsData,
+  emitter: vscode.EventEmitter<void>,
+): Promise<void> {
+  const entries = keyManager.entries();
+  const items: vscode.QuickPickItem[] = [];
+
+  for (const [key, value] of entries) {
+    const masked =
+      value.length > 8
+        ? value.slice(0, 4) + "..." + value.slice(-4)
+        : "****";
+    items.push({ label: key, description: masked });
+  }
+  items.push({ label: "$(add) Add new API key", description: "" });
+
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: "Manage API keys",
+  });
+  if (!picked) return;
+
+  if (picked.label.startsWith("$(add)")) {
+    const allKeys = new Set<string>();
+    for (const info of Object.values(modelsData.providers)) {
+      for (const k of info.envKeys) allKeys.add(k);
+    }
+    const unconfigured = [...allKeys].filter((k) => !keyManager.get(k)).sort();
+    if (!unconfigured.length) {
+      vscode.window.showInformationMessage("All provider API keys are already configured.");
+      return;
+    }
+    const keyName = await vscode.window.showQuickPick(unconfigured, {
+      placeHolder: "Which API key?",
+    });
+    if (!keyName) return;
+    const value = await vscode.window.showInputBox({
+      prompt: `Enter ${keyName}`,
+      password: /KEY|SECRET|TOKEN/i.test(keyName),
+      ignoreFocusOut: true,
+    });
+    if (value) {
+      await keyManager.set(keyName, value);
+      emitter.fire();
+    }
+    return;
+  }
+
+  const action = await vscode.window.showQuickPick(
+    [{ label: "Update" }, { label: "Remove" }],
+    { placeHolder: picked.label },
+  );
+  if (!action) return;
+  if (action.label === "Remove") {
+    await keyManager.remove(picked.label);
+    emitter.fire();
+    vscode.window.showInformationMessage(`Removed ${picked.label}`);
+  } else {
+    const value = await vscode.window.showInputBox({
+      prompt: `Enter new value for ${picked.label}`,
+      password: /KEY|SECRET|TOKEN/i.test(picked.label),
+      ignoreFocusOut: true,
+    });
+    if (value) {
+      await keyManager.set(picked.label, value);
+      emitter.fire();
+    }
+  }
+}
+
+export async function activate(
+  context: vscode.ExtensionContext,
+): Promise<void> {
   let modelsData: ModelsData = { providers: {} };
   try {
     const loaded = require("./models.json");
     if (loaded?.providers) modelsData = loaded;
   } catch {}
+
+  const allEnvKeys = new Set<string>();
+  for (const info of Object.values(modelsData.providers)) {
+    for (const k of info.envKeys) allEnvKeys.add(k);
+  }
+
+  const keyManager = new KeyManager(context.secrets);
+  await keyManager.loadAll([...allEnvKeys]);
 
   const prefix = SETTING_SECTION + ".";
   const settingKeys = Object.keys(
@@ -107,7 +283,14 @@ export function activate(context: vscode.ExtensionContext): void {
     .map((k) => k.slice(prefix.length));
 
   const emitter = new vscode.EventEmitter<void>();
-  context.subscriptions.push(emitter);
+  context.subscriptions.push(
+    emitter,
+    context.secrets.onDidChange(async (e) => {
+      if (!allEnvKeys.has(e.key)) return;
+      keyManager.syncCache(e.key, await context.secrets.get(e.key));
+      emitter.fire();
+    }),
+  );
 
   try {
     const serverDef = (vscode.lm as any).registerMcpServerDefinitionProvider(
@@ -119,7 +302,7 @@ export function activate(context: vscode.ExtensionContext): void {
               "Interact MCP",
               "uvx",
               ["interact-mcp"],
-              buildEnv(settingKeys),
+              buildEnv(settingKeys, keyManager, allEnvKeys),
             ),
           ];
         },
@@ -138,7 +321,10 @@ export function activate(context: vscode.ExtensionContext): void {
       if (e.affectsConfiguration(SETTING_SECTION)) emitter.fire();
     }),
     vscode.commands.registerCommand("interactMcp.selectModel", () =>
-      selectModel(settingKeys, modelsData),
+      selectModel(settingKeys, modelsData, keyManager, emitter),
+    ),
+    vscode.commands.registerCommand("interactMcp.manageApiKeys", () =>
+      manageApiKeys(keyManager, modelsData, emitter),
     ),
   );
 }

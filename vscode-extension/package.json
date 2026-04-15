@@ -90,6 +90,10 @@
       {
         "command": "interactMcp.selectModel",
         "title": "Interact MCP: Select Model"
+      },
+      {
+        "command": "interactMcp.manageApiKeys",
+        "title": "Interact MCP: Manage API Keys"
       }
     ]
   },
