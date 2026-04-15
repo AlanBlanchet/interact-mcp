@@ -123,7 +123,7 @@ async def _wait(page: Page, condition: str | None):
     if condition in ("networkidle", "domcontentloaded", "load"):
         await page.wait_for_load_state(condition)
     else:
-        await page.wait_for_selector(condition, state="visible", timeout=10000)
+        await page.wait_for_selector(condition, state="visible", timeout=config.wait_timeout)
 
 
 def _step(i: int, action_type: str, msg: str) -> str:

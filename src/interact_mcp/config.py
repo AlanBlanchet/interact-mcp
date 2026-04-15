@@ -22,6 +22,8 @@ class Config(BaseSettings):
     screenshot_dump_dir: Path | None = None
     video_fps: int = 5
     video_duration: float = 3.0
+    max_tokens: int = 2048
+    wait_timeout: int = 10000
 
     def model_for(self, media_type: str) -> tuple[str, str | None]:
         if media_type == "video":

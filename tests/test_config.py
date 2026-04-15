@@ -29,6 +29,8 @@ def test_defaults():
     assert cfg.screenshot_dump_dir is None
     assert cfg.video_fps == 5
     assert cfg.video_duration == 3.0
+    assert cfg.max_tokens == 2048
+    assert cfg.wait_timeout == 10000
     assert not hasattr(cfg, "vision_api_key")
 
 

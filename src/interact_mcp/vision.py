@@ -76,18 +76,21 @@ def _video_content(item: MediaItem, model: str) -> list[dict]:
 
 
 async def _vision_completion(
-    messages: list[dict], model: str, base_url: str | None
+    messages: list[dict], model: str, base_url: str | None, max_tokens: int
 ) -> str:
     kwargs: dict = {
         "model": model,
         "messages": messages,
-        "max_tokens": 2048,
+        "max_tokens": max_tokens,
     }
     if base_url:
         kwargs["api_base"] = base_url
 
     response = await litellm.acompletion(**kwargs)
-    return response.choices[0].message.content
+    text = response.choices[0].message.content
+    if response.choices[0].finish_reason == "length":
+        text += f"\n\n[Response truncated at {max_tokens} tokens — increase interactMcp.maxTokens for longer responses]"
+    return text
 
 
 def _build_messages(content: list[dict], prompt: str | None) -> list[dict]:
@@ -117,7 +120,7 @@ async def analyze_media(
         else:
             content.extend(_video_content(item, model))
     return await _vision_completion(
-        _build_messages(content, prompt), model, base_url
+        _build_messages(content, prompt), model, base_url, config.max_tokens
     )
 
 

@@ -64,6 +64,11 @@
           "default": true,
           "description": "Run browser in headless mode"
         },
+        "interactMcp.slowMo": {
+          "type": "number",
+          "default": 0,
+          "description": "Slow down browser actions by this many milliseconds (useful for observing automation)"
+        },
         "interactMcp.browserType": {
           "type": "string",
           "default": "chromium",
@@ -93,6 +98,21 @@
           "type": "number",
           "default": 3,
           "description": "Duration in seconds for video capture"
+        },
+        "interactMcp.maxTokens": {
+          "type": "number",
+          "default": 2048,
+          "description": "Maximum tokens for VLM vision responses"
+        },
+        "interactMcp.waitTimeout": {
+          "type": "number",
+          "default": 10000,
+          "description": "Default timeout in ms for waiting on elements"
+        },
+        "interactMcp.screenshotDumpDir": {
+          "type": "string",
+          "default": "",
+          "description": "Save every screenshot to this folder as timestamped PNGs (for debugging)"
         }
       }
     },
