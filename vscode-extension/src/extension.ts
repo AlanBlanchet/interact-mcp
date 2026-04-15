@@ -24,10 +24,15 @@ function formatLabel(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
 }
 
-function buildEnv(
-  settingKeys: string[],
-  modelsData: ModelsData,
-): Record<string, string> {
+function filterEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (v !== undefined) result[k] = v;
+  }
+  return result;
+}
+
+function buildEnv(settingKeys: string[]): Record<string, string> {
   const cfg = vscode.workspace.getConfiguration(SETTING_SECTION);
   const env: Record<string, string> = {};
 
@@ -38,17 +43,7 @@ function buildEnv(
       typeof value === "boolean" ? (value ? "true" : "false") : String(value);
   }
 
-  const seen = new Set<string>();
-  for (const info of Object.values(modelsData.providers)) {
-    for (const key of info.envKeys) {
-      if (!seen.has(key) && process.env[key]) {
-        env[key] = process.env[key]!;
-      }
-      seen.add(key);
-    }
-  }
-
-  return env;
+  return { ...filterEnv(process.env), ...env };
 }
 
 async function selectModel(
@@ -124,7 +119,7 @@ export function activate(context: vscode.ExtensionContext): void {
               "Interact MCP",
               "uvx",
               ["interact-mcp"],
-              buildEnv(settingKeys, modelsData),
+              buildEnv(settingKeys),
             ),
           ];
         },

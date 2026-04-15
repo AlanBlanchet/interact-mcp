@@ -440,11 +440,15 @@ async def analyze_window(title: str, query: str | None = None) -> str:
 
 @mcp.tool()
 async def record_window(
-    title: str, query: str | None = None, duration: float | None = None
+    title: str,
+    query: str | None = None,
+    duration: float | None = None,
+    path: str | None = None,
 ) -> str:
     """Record a short video of a desktop window and analyze with vision.
 
     Works on X11 with ffmpeg. Records for a few seconds, then sends for video analysis.
+    If path is provided, also saves the mp4 to that file path.
     """
     result = _find_desktop_window(title)
     if isinstance(result, str):
@@ -454,6 +458,8 @@ async def record_window(
     dur = duration or config.video_duration
     video_bytes = desktop.capture_window_video(win.wid, dur, config.video_fps)
     _maybe_dump(video_bytes, f"video_{win.name}", ext="mp4")
+    if path:
+        Path(path).write_bytes(video_bytes)
 
     context = f"Desktop window recording: {win.name} ({win.w}x{win.h}, {dur}s)"
     media = [MediaItem.from_bytes(video_bytes, "video", "video/mp4")]
