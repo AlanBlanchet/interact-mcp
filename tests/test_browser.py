@@ -124,3 +124,8 @@ def test_log_deque_maxlen():
     mgr = BrowserManager(Config())
     assert mgr._network_log.maxlen == LOG_MAXLEN
     assert mgr._console_log.maxlen == LOG_MAXLEN
+
+
+def test_is_recording_default_false():
+    mgr = BrowserManager(Config())
+    assert mgr.is_recording is False

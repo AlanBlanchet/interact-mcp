@@ -250,6 +250,6 @@ async def test_desktop_windows_graceful():
     assert isinstance(result, str)
 
 
-async def test_analyze_window_no_match():
-    result = await server.analyze_window("NONEXISTENT_WINDOW_12345")
+async def test_screenshot_window_no_match():
+    result = await server.screenshot(window="NONEXISTENT_WINDOW_12345")
     assert "No desktop windows" in result or "No window matching" in result

@@ -4,6 +4,7 @@ from pydantic import TypeAdapter, ValidationError
 from interact_mcp.actions import (
     AnyAction,
     AnnotateAction,
+    BROWSER_ONLY_ACTIONS,
     ClickAction,
     ClickElementAction,
     CloseTabAction,
@@ -160,6 +161,14 @@ def test_unknown_type_rejected():
         adapter.validate_python([{"type": "unknown_action"}])
 
 
+def test_browser_only_actions_set():
+    assert "navigate" in BROWSER_ONLY_ACTIONS
+    assert "evaluate_js" in BROWSER_ONLY_ACTIONS
+    assert "new_tab" in BROWSER_ONLY_ACTIONS
+    assert "click" not in BROWSER_ONLY_ACTIONS
+    assert "scroll" not in BROWSER_ONLY_ACTIONS
+
+
 def test_upload_file_defaults():
     action = UploadFileAction(selector="input[type=file]", path="/some/file.txt")
     assert action.type == "upload_file"
@@ -228,6 +237,38 @@ def test_upload_file_with_ref():
 def test_upload_file_missing_target():
     with pytest.raises(ValidationError):
         UploadFileAction(path="/some/file.txt")
+
+
+def test_screenshot_defaults():
+    action = ScreenshotAction()
+    assert action.type == "screenshot"
+    assert action.scope is None
+    assert action.query is None
+    assert action.selector is None
+    assert action.element is None
+    assert action.mutates is False
+
+
+def test_screenshot_with_selector():
+    action = ScreenshotAction(selector="#hero-image", query="describe this")
+    assert action.selector == "#hero-image"
+    assert action.query == "describe this"
+    assert action.element is None
+
+
+def test_screenshot_with_element():
+    action = ScreenshotAction(element=5, query="what color is it?")
+    assert action.element == 5
+    assert action.selector is None
+
+
+def test_screenshot_element_via_union():
+    raw = [{"type": "screenshot", "selector": "div.card", "element": 3}]
+    actions = adapter.validate_python(raw)
+    assert len(actions) == 1
+    assert isinstance(actions[0], ScreenshotAction)
+    assert actions[0].selector == "div.card"
+    assert actions[0].element == 3
 
 
 def test_annotate_defaults():

@@ -1,4 +1,5 @@
 from typing import Annotated, ClassVar, Literal
+from pathlib import Path
 
 import httpx
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -6,6 +7,8 @@ from playwright.async_api import Page
 
 from interact_mcp.config import DEFAULT_LIMIT
 from interact_mcp.state import ref_locator
+
+_DND_DISPATCH_JS = (Path(__file__).parent / "js" / "dnd_dispatch.js").read_text()
 
 
 class Action(BaseModel):
@@ -28,7 +31,11 @@ class TargetedAction(Action):
         return self
 
     def _locator(self, page: Page):
-        return page.locator(ref_locator(self.ref)) if self.ref else page.locator(self.selector)
+        return (
+            page.locator(ref_locator(self.ref))
+            if self.ref
+            else page.locator(self.selector)
+        )
 
 
 class _CoordinateTargetMixin(TargetedAction):
@@ -117,14 +124,18 @@ class DragAction(Action):
     to_y: int | None = None
     from_ref: str | None = None
     to_ref: str | None = None
-    steps: int = 1
+    steps: int = Field(1, ge=1)
 
     @model_validator(mode="after")
     def _require_targets(self):
-        has_from = self.from_ref or (self.from_x is not None and self.from_y is not None)
+        has_from = self.from_ref or (
+            self.from_x is not None and self.from_y is not None
+        )
         has_to = self.to_ref or (self.to_x is not None and self.to_y is not None)
         if not has_from or not has_to:
-            raise ValueError("Provide from_ref or from_x+from_y, and to_ref or to_x+to_y")
+            raise ValueError(
+                "Provide from_ref or from_x+from_y, and to_ref or to_x+to_y"
+            )
         return self
 
     async def execute(self, page: Page):
@@ -142,6 +153,10 @@ class DragAction(Action):
         await page.mouse.down()
         await page.mouse.move(tx, ty, steps=self.steps)
         await page.mouse.up()
+
+        await page.evaluate(
+            _DND_DISPATCH_JS, [float(fx), float(fy), float(tx), float(ty)]
+        )
 
 
 class NavigateAction(Action):
@@ -164,6 +179,8 @@ class ScreenshotAction(ObservationAction):
     type: Literal["screenshot"] = "screenshot"
     scope: str | None = None
     query: str | None = None
+    selector: str | None = None
+    element: int | None = None
 
 
 class WaitForAction(ObservationAction):
@@ -215,7 +232,9 @@ class ClickElementAction(Action):
     element: int
 
     async def execute(self, page: Page):
-        raise NotImplementedError("server resolves click_element using stored element map")
+        raise NotImplementedError(
+            "server resolves click_element using stored element map"
+        )
 
 
 class NewTabAction(ObservationAction):
@@ -273,3 +292,15 @@ AnyAction = Annotated[
     | ClickElementAction,
     Field(discriminator="type"),
 ]
+
+BROWSER_ONLY_ACTIONS = frozenset(
+    {
+        "navigate",
+        "evaluate_js",
+        "wait_for",
+        "upload_file",
+        "new_tab",
+        "switch_tab",
+        "close_tab",
+    }
+)
