@@ -94,6 +94,9 @@ def capture_window_video(wid: int, duration: float = 3.0, fps: int = 10) -> byte
         k, v = line.split("=")
         props[k] = v
 
+    props["X"] = str(max(0, int(props["X"])))
+    props["Y"] = str(max(0, int(props["Y"])))
+
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
         output_path = Path(f.name)
 
@@ -118,6 +121,8 @@ def capture_window_video(wid: int, duration: float = 3.0, fps: int = 10) -> byte
                 str(duration),
                 "-pix_fmt",
                 "yuv420p",
+                "-vf",
+                "pad=ceil(iw/2)*2:ceil(ih/2)*2",
                 str(output_path),
             ],
             check=True,
@@ -206,17 +211,24 @@ async def _xdo(wid: int, subcmd: str, *args: str):
     await _run("xdotool", subcmd, "--window", str(wid), *args)
 
 
+async def _activate(wid: int):
+    await _run("xdotool", "windowactivate", str(wid))
+    await asyncio.sleep(0.05)
+
+
 async def desktop_click(wid: int, x: int, y: int, button: int = 1):
     await _xdo(wid, "mousemove", str(x), str(y))
     await _xdo(wid, "click", str(button))
 
 
 async def desktop_type(wid: int, text: str):
-    await _xdo(wid, "type", "--delay", "12", "--", text)
+    await _activate(wid)
+    await _run("xdotool", "type", "--delay", "12", "--", text)
 
 
 async def desktop_key(wid: int, key: str):
-    await _xdo(wid, "key", "--", map_key(key))
+    await _activate(wid)
+    await _run("xdotool", "key", "--", map_key(key))
 
 
 async def desktop_scroll(wid: int, x: int, y: int, direction: str, amount: int = 3):
@@ -276,7 +288,9 @@ def parse_elements_from_vlm(response: str) -> list[DesktopElement] | None:
     return elements or None
 
 
-def detect_motion(video_bytes: bytes, threshold: float = 0.01) -> bool:
+def detect_motion(
+    video_bytes: bytes, pixel_delta: int = 10, changed_fraction: float = 0.001
+) -> bool:
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             video_path = Path(tmpdir) / "input.mp4"
@@ -288,7 +302,7 @@ def detect_motion(video_bytes: bytes, threshold: float = 0.01) -> bool:
                     "-i",
                     str(video_path),
                     "-vf",
-                    "select='eq(n\\,0)+eq(n\\,5)+eq(n\\,10)+eq(n\\,15)'",
+                    "select='eq(n\\,0)+eq(n\\,5)+eq(n\\,10)+eq(n\\,15)+eq(n\\,20)+eq(n\\,25)'",
                     "-vsync",
                     "vfr",
                     str(Path(tmpdir) / "frame_%02d.png"),
@@ -303,10 +317,13 @@ def detect_motion(video_bytes: bytes, threshold: float = 0.01) -> bool:
             images = [Image.open(f).convert("L") for f in frames]
             for a, b in zip(images, images[1:]):
                 diff = ImageChops.difference(a, b)
-                hist = diff.histogram()
-                total = sum(i * count for i, count in enumerate(hist))
-                mean_diff = total / (a.size[0] * a.size[1]) / 255.0
-                if mean_diff > threshold:
+                total_pixels = a.size[0] * a.size[1]
+                changed = sum(
+                    count
+                    for value, count in enumerate(diff.histogram())
+                    if value > pixel_delta
+                )
+                if changed > total_pixels * changed_fraction:
                     return True
             return False
     except Exception:

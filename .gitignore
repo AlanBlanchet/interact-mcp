@@ -14,3 +14,4 @@ wheels/
 
 # Test output
 out/
+test_output/

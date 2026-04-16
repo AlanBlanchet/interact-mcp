@@ -131,21 +131,27 @@ async def test_desktop_click_right_button(mock_run):
 @pytest.mark.asyncio
 async def test_desktop_type_commands(mock_run):
     await desktop_type(123, "hello world")
-    mock_run.assert_called_once_with(
-        "xdotool", "type", "--window", "123", "--delay", "12", "--", "hello world"
+    assert mock_run.call_count == 2
+    mock_run.assert_any_call("xdotool", "windowactivate", "123")
+    mock_run.assert_any_call(
+        "xdotool", "type", "--delay", "12", "--", "hello world"
     )
 
 
 @pytest.mark.asyncio
 async def test_desktop_key_commands(mock_run):
     await desktop_key(123, "Enter")
-    mock_run.assert_called_once_with("xdotool", "key", "--window", "123", "--", "Return")
+    assert mock_run.call_count == 2
+    mock_run.assert_any_call("xdotool", "windowactivate", "123")
+    mock_run.assert_any_call("xdotool", "key", "--", "Return")
 
 
 @pytest.mark.asyncio
 async def test_desktop_key_combo(mock_run):
     await desktop_key(123, "Control+a")
-    mock_run.assert_called_once_with("xdotool", "key", "--window", "123", "--", "ctrl+a")
+    assert mock_run.call_count == 2
+    mock_run.assert_any_call("xdotool", "windowactivate", "123")
+    mock_run.assert_any_call("xdotool", "key", "--", "ctrl+a")
 
 
 @pytest.mark.asyncio
@@ -193,16 +199,28 @@ async def test_desktop_hover_commands(mock_run):
 
 
 @pytest.mark.asyncio
-async def test_desktop_no_focus_stealing(mock_run):
+async def test_mouse_no_focus_stealing(mock_run):
     await desktop_click(1, 0, 0)
-    await desktop_type(1, "x")
-    await desktop_key(1, "a")
     await desktop_scroll(1, 0, 0, "down", 1)
     await desktop_drag(1, 0, 0, 1, 1, steps=1)
     await desktop_hover(1, 0, 0)
     focus_commands = {"windowfocus", "windowactivate", "windowraise"}
     for call in mock_run.call_args_list:
         assert not focus_commands.intersection(call.args)
+
+
+@pytest.mark.asyncio
+async def test_keyboard_activates_window(mock_run):
+    await desktop_type(1, "x")
+    await desktop_key(1, "a")
+    activate_calls = [
+        c for c in mock_run.call_args_list if "windowactivate" in c.args
+    ]
+    assert len(activate_calls) == 2
+    focus_calls = [
+        c for c in mock_run.call_args_list if "windowfocus" in c.args
+    ]
+    assert len(focus_calls) == 0
 
 
 def test_detect_motion_ffmpeg_failure():
