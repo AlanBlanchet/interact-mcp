@@ -3,6 +3,7 @@ import json
 import re
 import subprocess
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from PIL import Image, ImageChops
@@ -211,9 +212,32 @@ async def _xdo(wid: int, subcmd: str, *args: str):
     await _run("xdotool", subcmd, "--window", str(wid), *args)
 
 
-async def _activate(wid: int):
-    await _run("xdotool", "windowactivate", str(wid))
+async def _get_active_window() -> str | None:
+    proc = await asyncio.create_subprocess_exec(
+        "xdotool",
+        "getactivewindow",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    if proc.returncode == 0:
+        return stdout.decode().strip()
+    return None
+
+
+@asynccontextmanager
+async def _keyboard_focus(wid: int):
+    prev_wid = await _get_active_window()
+    await _run("xdotool", "windowactivate", "--sync", str(wid))
     await asyncio.sleep(0.05)
+    try:
+        yield
+    finally:
+        if prev_wid:
+            try:
+                await _run("xdotool", "windowactivate", prev_wid)
+            except RuntimeError:
+                pass
 
 
 async def desktop_click(wid: int, x: int, y: int, button: int = 1):
@@ -222,13 +246,13 @@ async def desktop_click(wid: int, x: int, y: int, button: int = 1):
 
 
 async def desktop_type(wid: int, text: str):
-    await _activate(wid)
-    await _run("xdotool", "type", "--delay", "12", "--", text)
+    async with _keyboard_focus(wid):
+        await _run("xdotool", "type", "--delay", "12", "--", text)
 
 
 async def desktop_key(wid: int, key: str):
-    await _activate(wid)
-    await _run("xdotool", "key", "--", map_key(key))
+    async with _keyboard_focus(wid):
+        await _run("xdotool", "key", "--", map_key(key))
 
 
 async def desktop_scroll(wid: int, x: int, y: int, direction: str, amount: int = 3):

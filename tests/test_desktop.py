@@ -1,4 +1,3 @@
-import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -110,7 +109,14 @@ def test_ref_to_index():
 
 @pytest.fixture
 def mock_run():
-    with patch("interact_mcp.desktop._run", new_callable=AsyncMock) as m:
+    with (
+        patch("interact_mcp.desktop._run", new_callable=AsyncMock) as m,
+        patch(
+            "interact_mcp.desktop._get_active_window",
+            new_callable=AsyncMock,
+            return_value="60818159",
+        ),
+    ):
         yield m
 
 
@@ -131,27 +137,28 @@ async def test_desktop_click_right_button(mock_run):
 @pytest.mark.asyncio
 async def test_desktop_type_commands(mock_run):
     await desktop_type(123, "hello world")
-    assert mock_run.call_count == 2
-    mock_run.assert_any_call("xdotool", "windowactivate", "123")
-    mock_run.assert_any_call(
-        "xdotool", "type", "--delay", "12", "--", "hello world"
-    )
+    assert mock_run.call_count == 3
+    mock_run.assert_any_call("xdotool", "windowactivate", "--sync", "123")
+    mock_run.assert_any_call("xdotool", "type", "--delay", "12", "--", "hello world")
+    mock_run.assert_any_call("xdotool", "windowactivate", "60818159")
 
 
 @pytest.mark.asyncio
 async def test_desktop_key_commands(mock_run):
     await desktop_key(123, "Enter")
-    assert mock_run.call_count == 2
-    mock_run.assert_any_call("xdotool", "windowactivate", "123")
+    assert mock_run.call_count == 3
+    mock_run.assert_any_call("xdotool", "windowactivate", "--sync", "123")
     mock_run.assert_any_call("xdotool", "key", "--", "Return")
+    mock_run.assert_any_call("xdotool", "windowactivate", "60818159")
 
 
 @pytest.mark.asyncio
 async def test_desktop_key_combo(mock_run):
     await desktop_key(123, "Control+a")
-    assert mock_run.call_count == 2
-    mock_run.assert_any_call("xdotool", "windowactivate", "123")
+    assert mock_run.call_count == 3
+    mock_run.assert_any_call("xdotool", "windowactivate", "--sync", "123")
     mock_run.assert_any_call("xdotool", "key", "--", "ctrl+a")
+    mock_run.assert_any_call("xdotool", "windowactivate", "60818159")
 
 
 @pytest.mark.asyncio
@@ -195,7 +202,9 @@ async def test_desktop_drag_commands(mock_run):
 @pytest.mark.asyncio
 async def test_desktop_hover_commands(mock_run):
     await desktop_hover(123, 200, 300)
-    mock_run.assert_called_once_with("xdotool", "mousemove", "--window", "123", "200", "300")
+    mock_run.assert_called_once_with(
+        "xdotool", "mousemove", "--window", "123", "200", "300"
+    )
 
 
 @pytest.mark.asyncio
@@ -213,13 +222,9 @@ async def test_mouse_no_focus_stealing(mock_run):
 async def test_keyboard_activates_window(mock_run):
     await desktop_type(1, "x")
     await desktop_key(1, "a")
-    activate_calls = [
-        c for c in mock_run.call_args_list if "windowactivate" in c.args
-    ]
-    assert len(activate_calls) == 2
-    focus_calls = [
-        c for c in mock_run.call_args_list if "windowfocus" in c.args
-    ]
+    activate_calls = [c for c in mock_run.call_args_list if "windowactivate" in c.args]
+    assert len(activate_calls) == 4
+    focus_calls = [c for c in mock_run.call_args_list if "windowfocus" in c.args]
     assert len(focus_calls) == 0
 
 

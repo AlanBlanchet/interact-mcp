@@ -23,6 +23,7 @@ from interact_mcp.actions import (
     NewTabAction,
     ScreenshotAction,
     ScrollAction,
+    SleepAction,
     SwitchTabAction,
     TypeTextAction,
 )
@@ -336,6 +337,7 @@ async def run_actions(
     Mutating: click, type_text, scroll, drag, navigate, evaluate_js, upload_file, key_press, click_element
     Observations: screenshot, wait_for, http_request, hover, annotate
     Tab control: new_tab, switch_tab, close_tab
+    Timing: sleep — pause execution for a duration (max 30s), useful for waiting on animations or delayed UI updates.
 
     Browser-only actions (navigate, evaluate_js, wait_for, upload_file, new_tab, switch_tab, close_tab) error when used with window.
 
@@ -363,6 +365,11 @@ async def _run_actions_desktop(
     step_reports: list[str] = []
 
     for i, action in enumerate(actions):
+        if isinstance(action, SleepAction):
+            await asyncio.sleep(action.duration)
+            step_reports.append(_step(i, action.type, f"waited {action.duration}s"))
+            continue
+
         if action.type in BROWSER_ONLY_ACTIONS:
             step_reports.append(
                 _step(

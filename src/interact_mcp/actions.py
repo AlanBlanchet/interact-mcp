@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated, ClassVar, Literal
 from pathlib import Path
 
@@ -227,6 +228,15 @@ class AnnotateAction(ObservationAction):
     limit: int = DEFAULT_LIMIT
 
 
+class SleepAction(ObservationAction):
+    type: Literal["sleep"] = "sleep"
+    duration: float = Field(1.0, gt=0, le=30)
+
+    async def execute(self, page: Page):
+        await asyncio.sleep(self.duration)
+        return f"waited {self.duration}s"
+
+
 class ClickElementAction(Action):
     type: Literal["click_element"] = "click_element"
     element: int
@@ -289,7 +299,8 @@ AnyAction = Annotated[
     | CloseTabAction
     | HttpRequestAction
     | AnnotateAction
-    | ClickElementAction,
+    | ClickElementAction
+    | SleepAction,
     Field(discriminator="type"),
 ]
 
