@@ -31,7 +31,11 @@ class TargetedAction(Action):
         return self
 
     def _locator(self, page: Page):
-        return page.locator(ref_locator(self.ref)) if self.ref else page.locator(self.selector)
+        return (
+            page.locator(ref_locator(self.ref))
+            if self.ref
+            else page.locator(self.selector)
+        )
 
 
 class _CoordinateTargetMixin(TargetedAction):
@@ -120,14 +124,18 @@ class DragAction(Action):
     to_y: int | None = None
     from_ref: str | None = None
     to_ref: str | None = None
-    steps: int = 1
+    steps: int = Field(1, ge=1)
 
     @model_validator(mode="after")
     def _require_targets(self):
-        has_from = self.from_ref or (self.from_x is not None and self.from_y is not None)
+        has_from = self.from_ref or (
+            self.from_x is not None and self.from_y is not None
+        )
         has_to = self.to_ref or (self.to_x is not None and self.to_y is not None)
         if not has_from or not has_to:
-            raise ValueError("Provide from_ref or from_x+from_y, and to_ref or to_x+to_y")
+            raise ValueError(
+                "Provide from_ref or from_x+from_y, and to_ref or to_x+to_y"
+            )
         return self
 
     async def execute(self, page: Page):
@@ -224,7 +232,9 @@ class ClickElementAction(Action):
     element: int
 
     async def execute(self, page: Page):
-        raise NotImplementedError("server resolves click_element using stored element map")
+        raise NotImplementedError(
+            "server resolves click_element using stored element map"
+        )
 
 
 class NewTabAction(ObservationAction):
@@ -283,7 +293,14 @@ AnyAction = Annotated[
     Field(discriminator="type"),
 ]
 
-BROWSER_ONLY_ACTIONS = frozenset({
-    "navigate", "evaluate_js", "wait_for", "upload_file",
-    "new_tab", "switch_tab", "close_tab",
-})
+BROWSER_ONLY_ACTIONS = frozenset(
+    {
+        "navigate",
+        "evaluate_js",
+        "wait_for",
+        "upload_file",
+        "new_tab",
+        "switch_tab",
+        "close_tab",
+    }
+)

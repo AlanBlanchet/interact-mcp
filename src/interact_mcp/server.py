@@ -57,7 +57,8 @@ def _find_desktop_window(title: str) -> desktop.DesktopWindow | str:
 
 
 def _resolve_target(
-    window: str | None, session: str,
+    window: str | None,
+    session: str,
 ) -> tuple[DesktopWindow | None, BrowserManager | None, str | None]:
     if window and session != _DEFAULT_SESSION:
         return None, None, "Cannot use both window and session"
@@ -72,7 +73,7 @@ def _resolve_target(
 _VLM_ELEMENT_PROMPT = (
     "Identify all interactive UI elements (buttons, text fields, dropdowns, "
     "checkboxes, links, menu items, tabs, sliders, icons) in this screenshot. "
-    'For each element, return a JSON array with objects like: '
+    "For each element, return a JSON array with objects like: "
     '{"role": "button", "name": "OK", "x": 200, "y": 300, "w": 120, "h": 40} '
     "where x,y is the top-left corner and w,h is the size. "
     "Only include clearly visible, interactive elements."
@@ -146,7 +147,9 @@ def _desktop_context(win: DesktopWindow) -> str:
 
 
 async def _capture_desktop(
-    win: DesktopWindow, query: str | None = None, path: str | None = None,
+    win: DesktopWindow,
+    query: str | None = None,
+    path: str | None = None,
 ) -> tuple[bytes, str]:
     screenshot_bytes = desktop.capture_window(win.wid)
     context = _desktop_context(win)
@@ -155,12 +158,15 @@ async def _capture_desktop(
 
 
 async def _annotate_desktop(
-    win: DesktopWindow, query: str | None = None,
+    win: DesktopWindow,
+    query: str | None = None,
 ) -> tuple[list[DesktopElement] | None, str]:
     screenshot_bytes, elements = await _detect_desktop_elements(win)
     if not elements:
         return None, "Could not detect elements — try screenshot with query instead"
-    annotated = annotate_screenshot(screenshot_bytes, desktop.to_interactive_elements(elements))
+    annotated = annotate_screenshot(
+        screenshot_bytes, desktop.to_interactive_elements(elements)
+    )
     element_list = desktop.format_desktop_elements(elements)
     context = f"Annotated desktop window with {len(elements)} elements:\n{element_list}"
     result = await _media_response(annotated, f"annotated_{win.name}", context, query)
@@ -345,6 +351,8 @@ async def run_actions(
     if win:
         return await _run_actions_desktop(win, actions, query)
     return await _run_actions_browser(mgr, actions, query, scope, wait, session)
+
+
 async def _run_actions_desktop(
     win: DesktopWindow,
     actions: list[AnyAction],
@@ -357,7 +365,11 @@ async def _run_actions_desktop(
     for i, action in enumerate(actions):
         if action.type in BROWSER_ONLY_ACTIONS:
             step_reports.append(
-                _step(i, action.type, f"Action '{action.type}' is browser-only — use a session instead of window")
+                _step(
+                    i,
+                    action.type,
+                    f"Action '{action.type}' is browser-only — use a session instead of window",
+                )
             )
             continue
 
@@ -368,21 +380,41 @@ async def _run_actions_desktop(
                 idx = desktop.ref_to_index(action.ref)
                 el = desktop.get_element(wid, idx)
                 if el is None:
-                    step_reports.append(_step(i, action.type, f"Element {idx} not found — run get_interactive_elements first"))
+                    step_reports.append(
+                        _step(
+                            i,
+                            action.type,
+                            f"Element {idx} not found — run get_interactive_elements first",
+                        )
+                    )
                     continue
                 await desktop.desktop_click(wid, el.center_x, el.center_y)
             elif action.selector:
-                step_reports.append(_step(i, action.type, "CSS selectors not supported on desktop — use x,y coordinates"))
+                step_reports.append(
+                    _step(
+                        i,
+                        action.type,
+                        "CSS selectors not supported on desktop — use x,y coordinates",
+                    )
+                )
                 continue
             step_reports.append(_step(i, action.type, "clicked"))
 
         elif isinstance(action, ClickElementAction):
             el = desktop.get_element(wid, action.element)
             if el is None:
-                step_reports.append(_step(i, action.type, f"Element {action.element} not found — run get_interactive_elements first"))
+                step_reports.append(
+                    _step(
+                        i,
+                        action.type,
+                        f"Element {action.element} not found — run get_interactive_elements first",
+                    )
+                )
                 continue
             await desktop.desktop_click(wid, el.center_x, el.center_y)
-            step_reports.append(_step(i, action.type, f"clicked [{el.index}] {el.role}: {el.name!r}"))
+            step_reports.append(
+                _step(i, action.type, f"clicked [{el.index}] {el.role}: {el.name!r}")
+            )
 
         elif isinstance(action, HoverAction):
             if action.x is not None and action.y is not None:
@@ -391,11 +423,15 @@ async def _run_actions_desktop(
                 idx = desktop.ref_to_index(action.ref)
                 el = desktop.get_element(wid, idx)
                 if el is None:
-                    step_reports.append(_step(i, action.type, f"Element {idx} not found"))
+                    step_reports.append(
+                        _step(i, action.type, f"Element {idx} not found")
+                    )
                     continue
                 await desktop.desktop_hover(wid, el.center_x, el.center_y)
             else:
-                step_reports.append(_step(i, action.type, "Provide x,y or ref for desktop hover"))
+                step_reports.append(
+                    _step(i, action.type, "Provide x,y or ref for desktop hover")
+                )
                 continue
             step_reports.append(_step(i, action.type, "hovered"))
 
@@ -404,22 +440,30 @@ async def _run_actions_desktop(
                 idx = desktop.ref_to_index(action.ref)
                 el = desktop.get_element(wid, idx)
                 if el is None:
-                    step_reports.append(_step(i, action.type, f"Element {idx} not found"))
+                    step_reports.append(
+                        _step(i, action.type, f"Element {idx} not found")
+                    )
                     continue
                 await desktop.desktop_click(wid, el.center_x, el.center_y)
             if action.clear_first:
                 await desktop.desktop_key(wid, "ctrl+a")
                 await desktop.desktop_key(wid, "Delete")
             await desktop.desktop_type(wid, action.text)
-            step_reports.append(_step(i, action.type, f"typed {len(action.text)} chars"))
+            step_reports.append(
+                _step(i, action.type, f"typed {len(action.text)} chars")
+            )
 
         elif isinstance(action, KeyPressAction):
             await desktop.desktop_key(wid, action.key)
             step_reports.append(_step(i, action.type, f"pressed {action.key}"))
 
         elif isinstance(action, ScrollAction):
-            await desktop.desktop_scroll(wid, win.w // 2, win.h // 2, action.direction, action.amount)
-            step_reports.append(_step(i, action.type, f"scrolled {action.direction} x{action.amount}"))
+            await desktop.desktop_scroll(
+                wid, win.w // 2, win.h // 2, action.direction, action.amount
+            )
+            step_reports.append(
+                _step(i, action.type, f"scrolled {action.direction} x{action.amount}")
+            )
 
         elif isinstance(action, DragAction):
             fx, fy = action.from_x, action.from_y
@@ -428,18 +472,24 @@ async def _run_actions_desktop(
                 idx = desktop.ref_to_index(action.from_ref)
                 el = desktop.get_element(wid, idx)
                 if el is None:
-                    step_reports.append(_step(i, action.type, f"from_ref element {idx} not found"))
+                    step_reports.append(
+                        _step(i, action.type, f"from_ref element {idx} not found")
+                    )
                     continue
                 fx, fy = el.center_x, el.center_y
             if action.to_ref:
                 idx = desktop.ref_to_index(action.to_ref)
                 el = desktop.get_element(wid, idx)
                 if el is None:
-                    step_reports.append(_step(i, action.type, f"to_ref element {idx} not found"))
+                    step_reports.append(
+                        _step(i, action.type, f"to_ref element {idx} not found")
+                    )
                     continue
                 tx, ty = el.center_x, el.center_y
             await desktop.desktop_drag(wid, fx, fy, tx, ty, action.steps)
-            step_reports.append(_step(i, action.type, f"dragged ({fx},{fy})->({tx},{ty})"))
+            step_reports.append(
+                _step(i, action.type, f"dragged ({fx},{fy})->({tx},{ty})")
+            )
 
         elif isinstance(action, ScreenshotAction):
             _, report = await _capture_desktop(win, action.query)
@@ -454,7 +504,11 @@ async def _run_actions_desktop(
             step_reports.append(_step(i, action.type, str(result)))
 
         else:
-            step_reports.append(_step(i, action.type, f"Action '{action.type}' not supported on desktop"))
+            step_reports.append(
+                _step(
+                    i, action.type, f"Action '{action.type}' not supported on desktop"
+                )
+            )
 
         await asyncio.sleep(0.1)
 
@@ -463,7 +517,11 @@ async def _run_actions_desktop(
     else:
         final_summary = f"{win.name} ({win.w}x{win.h})"
 
-    return f"{label}\n" + "\n".join(step_reports) + f"\n\n---\nFinal state: {final_summary}"
+    return (
+        f"{label}\n"
+        + "\n".join(step_reports)
+        + f"\n\n---\nFinal state: {final_summary}"
+    )
 
 
 async def _run_actions_browser(

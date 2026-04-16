@@ -67,7 +67,9 @@ def list_windows() -> list[DesktopWindow]:
     ]
 
 
-def find_window(title: str, windows: list[DesktopWindow] | None = None) -> DesktopWindow | None:
+def find_window(
+    title: str, windows: list[DesktopWindow] | None = None
+) -> DesktopWindow | None:
     if windows is None:
         windows = list_windows()
     hint = title.lower()
@@ -84,7 +86,8 @@ def capture_window(wid: int) -> bytes:
 def capture_window_video(wid: int, duration: float = 3.0, fps: int = 10) -> bytes:
     geom = subprocess.check_output(
         ["xdotool", "getwindowgeometry", "--shell", str(wid)],
-        text=True, timeout=5,
+        text=True,
+        timeout=5,
     )
     props = {}
     for line in geom.strip().splitlines():
@@ -97,17 +100,29 @@ def capture_window_video(wid: int, duration: float = 3.0, fps: int = 10) -> byte
     try:
         subprocess.run(
             [
-                "ffmpeg", "-y",
-                "-f", "x11grab",
-                "-video_size", f"{props['WIDTH']}x{props['HEIGHT']}",
-                "-framerate", str(fps),
-                "-i", f":0+{props['X']},{props['Y']}",
-                "-c:v", "libx264", "-preset", "ultrafast",
-                "-t", str(duration),
-                "-pix_fmt", "yuv420p",
+                "ffmpeg",
+                "-y",
+                "-f",
+                "x11grab",
+                "-video_size",
+                f"{props['WIDTH']}x{props['HEIGHT']}",
+                "-framerate",
+                str(fps),
+                "-i",
+                f":0+{props['X']},{props['Y']}",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-t",
+                str(duration),
+                "-pix_fmt",
+                "yuv420p",
                 str(output_path),
             ],
-            check=True, capture_output=True, timeout=duration + 10,
+            check=True,
+            capture_output=True,
+            timeout=duration + 10,
         )
         return output_path.read_bytes()
     finally:
@@ -158,9 +173,17 @@ def ref_to_index(ref: str) -> int:
     return int(ref.removeprefix("e"))
 
 
-def to_interactive_elements(elements: list[DesktopElement]) -> list["InteractiveElement"]:
+def to_interactive_elements(
+    elements: list[DesktopElement],
+) -> list["InteractiveElement"]:
     from interact_mcp.state import InteractiveElement
-    return [InteractiveElement(index=e.index, role=e.role, name=e.name, x=e.x, y=e.y, width=e.w, height=e.h) for e in elements]
+
+    return [
+        InteractiveElement(
+            index=e.index, role=e.role, name=e.name, x=e.x, y=e.y, width=e.w, height=e.h
+        )
+        for e in elements
+    ]
 
 
 def map_key(key: str) -> str:
@@ -174,51 +197,48 @@ async def _run(*args: str):
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        raise RuntimeError(f"{args[0]} failed (rc={proc.returncode}): {stderr.decode().strip()}")
+        raise RuntimeError(
+            f"{args[0]} failed (rc={proc.returncode}): {stderr.decode().strip()}"
+        )
 
 
-async def _focus(wid: int):
-    await _run("xdotool", "windowfocus", "--sync", str(wid))
+async def _xdo(wid: int, subcmd: str, *args: str):
+    await _run("xdotool", subcmd, "--window", str(wid), *args)
 
 
 async def desktop_click(wid: int, x: int, y: int, button: int = 1):
-    await _focus(wid)
-    await _run("xdotool", "mousemove", "--window", str(wid), str(x), str(y))
-    await _run("xdotool", "click", str(button))
+    await _xdo(wid, "mousemove", str(x), str(y))
+    await _xdo(wid, "click", str(button))
 
 
 async def desktop_type(wid: int, text: str):
-    await _focus(wid)
-    await _run("xdotool", "type", "--delay", "12", "--", text)
+    await _xdo(wid, "type", "--delay", "12", "--", text)
 
 
 async def desktop_key(wid: int, key: str):
-    await _focus(wid)
-    await _run("xdotool", "key", "--", map_key(key))
+    await _xdo(wid, "key", "--", map_key(key))
 
 
 async def desktop_scroll(wid: int, x: int, y: int, direction: str, amount: int = 3):
-    await _focus(wid)
-    await _run("xdotool", "mousemove", "--window", str(wid), str(x), str(y))
+    await _xdo(wid, "mousemove", str(x), str(y))
     button = str(_SCROLL_BUTTON[direction])
     for _ in range(amount):
-        await _run("xdotool", "click", button)
+        await _xdo(wid, "click", button)
 
 
 async def desktop_drag(wid: int, fx: int, fy: int, tx: int, ty: int, steps: int = 10):
-    await _focus(wid)
-    await _run("xdotool", "mousemove", "--window", str(wid), str(fx), str(fy))
-    await _run("xdotool", "mousedown", "1")
+    steps = max(1, steps)
+    await _xdo(wid, "mousemove", str(fx), str(fy))
+    await _xdo(wid, "mousedown", "1")
     for i in range(1, steps + 1):
         ix = fx + (tx - fx) * i // steps
         iy = fy + (ty - fy) * i // steps
-        await _run("xdotool", "mousemove", "--window", str(wid), str(ix), str(iy))
-    await _run("xdotool", "mouseup", "1")
+        await _xdo(wid, "mousemove", str(ix), str(iy))
+    await _xdo(wid, "mouseup", "1")
 
 
 async def desktop_hover(wid: int, x: int, y: int):
-    await _focus(wid)
-    await _run("xdotool", "mousemove", "--window", str(wid), str(x), str(y))
+    await _xdo(wid, "mousemove", str(x), str(y))
 
 
 def format_desktop_elements(elements: list[DesktopElement]) -> str:
@@ -263,12 +283,19 @@ def detect_motion(video_bytes: bytes, threshold: float = 0.01) -> bool:
             video_path.write_bytes(video_bytes)
             subprocess.run(
                 [
-                    "ffmpeg", "-y", "-i", str(video_path),
-                    "-vf", "select='eq(n\\,0)+eq(n\\,5)+eq(n\\,10)+eq(n\\,15)'",
-                    "-vsync", "vfr",
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(video_path),
+                    "-vf",
+                    "select='eq(n\\,0)+eq(n\\,5)+eq(n\\,10)+eq(n\\,15)'",
+                    "-vsync",
+                    "vfr",
                     str(Path(tmpdir) / "frame_%02d.png"),
                 ],
-                check=True, capture_output=True, timeout=15,
+                check=True,
+                capture_output=True,
+                timeout=15,
             )
             frames = sorted(Path(tmpdir).glob("frame_*.png"))
             if len(frames) < 2:
