@@ -282,3 +282,8 @@ AnyAction = Annotated[
     | ClickElementAction,
     Field(discriminator="type"),
 ]
+
+BROWSER_ONLY_ACTIONS = frozenset({
+    "navigate", "evaluate_js", "wait_for", "upload_file",
+    "new_tab", "switch_tab", "close_tab",
+})

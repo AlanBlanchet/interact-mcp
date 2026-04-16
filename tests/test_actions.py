@@ -4,6 +4,7 @@ from pydantic import TypeAdapter, ValidationError
 from interact_mcp.actions import (
     AnyAction,
     AnnotateAction,
+    BROWSER_ONLY_ACTIONS,
     ClickAction,
     ClickElementAction,
     CloseTabAction,
@@ -158,6 +159,14 @@ def test_mutates_flag():
 def test_unknown_type_rejected():
     with pytest.raises(ValidationError):
         adapter.validate_python([{"type": "unknown_action"}])
+
+
+def test_browser_only_actions_set():
+    assert "navigate" in BROWSER_ONLY_ACTIONS
+    assert "evaluate_js" in BROWSER_ONLY_ACTIONS
+    assert "new_tab" in BROWSER_ONLY_ACTIONS
+    assert "click" not in BROWSER_ONLY_ACTIONS
+    assert "scroll" not in BROWSER_ONLY_ACTIONS
 
 
 def test_upload_file_defaults():
