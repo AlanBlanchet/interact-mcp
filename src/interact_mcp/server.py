@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.utilities.types import Image
 from playwright.async_api import Page
 
 from interact_mcp import desktop
@@ -716,9 +717,10 @@ async def screenshot(
     selector: str | None = None,
     element: int | None = None,
     path: str | None = None,
+    return_image: bool = False,
     window: str | None = None,
     session: str = _DEFAULT_SESSION,
-) -> str:
+):
     """Capture the current page or a desktop window.
 
     Default: operates on browser session "default".
@@ -736,24 +738,32 @@ async def screenshot(
     query: question for VLM visual analysis of the captured content.
     scope: CSS selector to restrict text extraction to a sub-tree (browser only).
     path: save the PNG screenshot to this file path.
+    return_image: when True, return the raw screenshot bytes as an MCP ImageContent alongside the text,
+        so the calling agent can SEE the pixels directly (not just a VLM summary).
     """
     win, mgr, err = _resolve_target(window, session)
     if err:
         return err
+    img_bytes: bytes | None = None
     if win:
-        _, description = await _capture_desktop(win, query, path)
-        return f"{_desktop_label(win)}\n{description}"
-    if element is not None or selector is not None:
-        return _session_response(
+        img_bytes, description = await _capture_desktop(win, query, path)
+        text = f"{_desktop_label(win)}\n{description}"
+    elif element is not None or selector is not None:
+        text = _session_response(
             session, await _element_screenshot(mgr, 0, selector, element, query, path)
         )
-    state = await _capture(mgr, scope)
-    if path:
-        png_bytes = base64.b64decode(state.screenshot_base64)
-        _save_to_path(path, png_bytes)
-    if query:
-        return _session_response(session, await _analyze(state, query))
-    return _session_response(session, state.text_summary())
+    else:
+        state = await _capture(mgr, scope)
+        img_bytes = base64.b64decode(state.screenshot_base64)
+        if path:
+            _save_to_path(path, img_bytes)
+        if query:
+            text = _session_response(session, await _analyze(state, query))
+        else:
+            text = _session_response(session, state.text_summary())
+    if return_image and img_bytes is not None:
+        return [text, Image(data=img_bytes, format="png")]
+    return text
 
 
 @mcp.tool()
