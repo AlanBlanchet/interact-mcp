@@ -17,6 +17,12 @@ _ENV_PATTERNS = re.compile(
 FAKE_PROVIDER_RE = re.compile(r"^\d+[-_x]+\d+$|^v\d+$")
 FAKE_PROVIDER_NAMES = {"high", "low", "medium", "standard"}
 
+# Providers where litellm.validate_environment() misses required keys.
+# These use get_secret_str() in their transformation class instead.
+_EXTRA_ENV_KEYS: dict[str, list[str]] = {
+    "zai": ["ZAI_API_KEY"],
+}
+
 
 @contextmanager
 def _cleared_api_env():
@@ -56,7 +62,7 @@ for model, info in litellm.model_cost.items():
 
 result = {
     "providers": {
-        k: {"envKeys": _get_env_keys(v), "models": sorted(v)}
+        k: {"envKeys": _get_env_keys(v) or _EXTRA_ENV_KEYS.get(k, []), "models": sorted(v)}
         for k, v in sorted(providers.items())
     }
 }

@@ -929,9 +929,10 @@
       ]
     },
     "zai": {
-      "envKeys": [],
+      "envKeys": ["ZAI_API_KEY"],
       "models": [
-        "zai/glm-4.5v"
+        "zai/glm-4.5v",
+        "zai/glm-4.6v"
       ]
     }
   }
