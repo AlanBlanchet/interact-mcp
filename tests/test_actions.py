@@ -223,9 +223,12 @@ def test_type_text_with_ref():
     assert action.selector is None
 
 
-def test_type_text_missing_target():
-    with pytest.raises(ValidationError):
-        TypeTextAction(text="hello")
+def test_type_text_no_target_allowed_for_desktop():
+    # Desktop use: no ref/selector needed — validation deferred to execute()
+    action = TypeTextAction(text="hello")
+    assert action.ref is None
+    assert action.selector is None
+    assert action.text == "hello"
 
 
 def test_upload_file_with_ref():

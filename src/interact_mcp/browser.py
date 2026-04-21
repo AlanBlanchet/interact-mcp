@@ -16,7 +16,6 @@ class BrowserManager:
         self._playwright = None
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
-        # TODO: element map may go stale after mutating actions (click, navigate, etc.)
         self._element_map: dict[int, list[InteractiveElement]] = {}
         self._network_log: deque[dict] = deque(maxlen=LOG_MAXLEN)
         self._console_log: deque[dict] = deque(maxlen=LOG_MAXLEN)
@@ -67,13 +66,22 @@ class BrowserManager:
 
     async def save_state(self) -> dict:
         await self.ensure_ready()
-        return await self._context.storage_state()
+        state = await self._context.storage_state()
+        page = self._context.pages[0] if self._context.pages else None
+        if page and page.url != "about:blank":
+            state["_url"] = page.url
+        return state
 
     async def load_state(self, state: dict):
         await self._ensure_browser()
+        url = state.pop("_url", None)
         if self._context:
             await self._context.close()
+        self._element_map.clear()
         await self._new_context(state)
+        if url:
+            page = self._context.pages[0]
+            await page.goto(url)
 
     @property
     def is_recording(self) -> bool:
@@ -87,6 +95,7 @@ class BrowserManager:
         url = page.url if page and page.url != "about:blank" else None
         cookies = await self._context.cookies() if self._context else []
         await self._context.close()
+        self._element_map.clear()
         self._recording_dir = tempfile.TemporaryDirectory()
         await self._new_context(record_video_dir=self._recording_dir.name)
         if cookies:
@@ -110,6 +119,7 @@ class BrowserManager:
         video_bytes = video_files[-1].read_bytes() if video_files else b""
         self._recording_dir.cleanup()
         self._recording_dir = None
+        self._element_map.clear()
         await self._new_context()
         if cookies:
             await self._context.add_cookies(cookies)
