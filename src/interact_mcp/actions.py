@@ -75,12 +75,23 @@ class HoverAction(_CoordinateTargetMixin):
             await page.mouse.move(self.x, self.y)
 
 
-class TypeTextAction(TargetedAction):
+class TypeTextAction(Action):
     type: Literal["type_text"] = "type_text"
+    ref: str | None = None
+    selector: str | None = None
     text: str
     clear_first: bool = True
 
+    def _locator(self, page: Page):
+        return (
+            page.locator(ref_locator(self.ref))
+            if self.ref
+            else page.locator(self.selector)
+        )
+
     async def execute(self, page: Page):
+        if not self.ref and not self.selector:
+            raise ValueError("Browser type_text requires ref or selector")
         target = self._locator(page)
         if self.clear_first:
             await target.fill(self.text)
@@ -173,7 +184,10 @@ class EvaluateJsAction(Action):
     script: str
 
     async def execute(self, page: Page):
-        return await page.evaluate(self.script)
+        src = self.script.strip()
+        if src.startswith("return ") or src.startswith("return\n"):
+            src = f"(() => {{ {src} }})()"
+        return await page.evaluate(src)
 
 
 class ScreenshotAction(ObservationAction):
