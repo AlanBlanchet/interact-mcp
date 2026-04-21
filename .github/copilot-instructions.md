@@ -33,6 +33,8 @@ MCP server: browser + desktop automation with VLM vision.
 - `tests/live_desktop_test.py` = manual, not CI-safe (needs X11 + running apps)
 - Mock `_run` in desktop tests, `_get_active_window` for keyboard tests
 - Browser integration tests skip without API keys
+- TypeScript/extension changes → rebuild `.vsix` + reinstall in VS Code before declaring done
+- Agent-facing behavior changes → validate via real agent chat: open VS Code, open chat panel, select cheap model (Haiku), send prompt, screenshot evidence required
 
 ## Git
 
