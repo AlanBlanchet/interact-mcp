@@ -1,40 +1,40 @@
 # interact-mcp
 
-MCP server for browser + desktop automation with VLM vision.
+MCP server: browser + desktop automation with VLM vision.
 
 ## Architecture
 
-- Python 3.11, uv package manager, src layout at `src/interact_mcp/`
-- FastMCP for protocol, Playwright for browser, xdotool/maim for desktop, litellm for VLM
-- VS Code extension in `vscode-extension/` (TypeScript, SecretStorage for API keys)
-- Config via pydantic-settings with `INTERACT_MCP_` env prefix
-- `_run_actions_desktop()` and `_run_actions_browser()` are the two dispatch paths in server.py
-- Every tool's docstring IS the agent-facing documentation — keep them precise about parameters and return values
+- Python 3.11, uv, src layout `src/interact_mcp/`
+- FastMCP (protocol), Playwright (browser), xdotool/maim (desktop), litellm (VLM)
+- VS Code extension `vscode-extension/` (TypeScript, SecretStorage for API keys)
+- Config: pydantic-settings, `INTERACT_MCP_` env prefix
+- Two dispatch paths: `_run_actions_desktop()`, `_run_actions_browser()` in server.py
+- Tool docstrings = agent-facing docs — keep precise
 
-## Desktop automation
+## Desktop
 
-- Tools accept EITHER `session` (browser) OR `window` (desktop) — mutually exclusive
-- Mouse ops work in background via `xdotool --window WID`, keyboard MUST activate window first then restore previous focus via `_restore_focus`
-- GTK apps ignore `xdotool key --window WID` — keyboard always needs `windowactivate`
-- `desktop_type` for character input, `desktop_key` for control keys (Enter, Tab, combos)
-- xdotool coordinates are window-relative and can be negative — clamp to 0
-- `maim -u -i WID` uses XComposite — captures even when occluded (on supported compositors)
-- `SleepAction` for agent-controlled delays between actions
+- `session` (browser) OR `window` (desktop) — mutually exclusive
+- Mouse: background via `xdotool --window WID`. Keyboard: must `windowactivate` first → `_restore_focus` after
+- GTK ignores `xdotool key --window` → keyboard always needs `windowactivate`
+- `desktop_type` = character input, `desktop_key` = control keys/combos
+- xdotool coords window-relative, can be negative → clamp to 0
+- `maim -u -i WID` uses XComposite — captures even when occluded
+- `SleepAction` for agent-controlled delays
 
-## Video and vision
+## Video/Vision
 
-- ffmpeg libx264 requires even width AND height — use pad filter (`pad=ceil(iw/2)*2:ceil(ih/2)*2`)
-- Playwright video requires context close — recording destroys and recreates the browser context
-- `detect_motion()` gates VLM analysis: pixel-counting on histogram (not mean-diff), needed because VLMs hallucinate motion in static videos
+- ffmpeg libx264 needs even w/h → pad filter (`pad=ceil(iw/2)*2:ceil(ih/2)*2`)
+- Playwright video needs context close — recording destroys/recreates browser context
+- `detect_motion()` gates VLM: pixel-counting on histogram (not mean-diff), VLMs hallucinate motion in static video
 
 ## Testing
 
-- `uv run pytest tests/ -q --tb=short` — must pass before committing
-- `tests/live_desktop_test.py` is a manual live test, not CI-safe (needs X11 + running apps)
-- Mock `_run` in desktop tests, mock `_get_active_window` for keyboard tests
+- `uv run pytest tests/ -q --tb=short` — pass before committing
+- `tests/live_desktop_test.py` = manual, not CI-safe (needs X11 + running apps)
+- Mock `_run` in desktop tests, `_get_active_window` for keyboard tests
 - Browser integration tests skip without API keys
 
 ## Git
 
-- Strict mode (no git-mode file) — branches, conventional commits, `--no-ff` merges
-- Pre-commit hook auto-builds `.vsix` when `vscode-extension/` files change
+- Strict mode — branches, conventional commits, `--no-ff` merges
+- Pre-commit hook auto-builds `.vsix` on `vscode-extension/` changes
