@@ -93,6 +93,28 @@ def _session_response(session: str, body: str) -> str:
     return f"[session: {session}]\n{body}"
 
 
+def _dump_dir(debug_dir: str | None) -> Path | None:
+    if debug_dir:
+        return Path(debug_dir)
+    return config.screenshot_dump_dir
+
+
+def _debug_write(debug_dir: str | None, label: str, content: str, ext: str = "txt"):
+    d = _dump_dir(debug_dir)
+    if not d:
+        return
+    d.mkdir(parents=True, exist_ok=True)
+    slug = __import__("re").sub(r"[^a-zA-Z0-9]", "_", label)[:30]
+    ts = __import__("datetime").datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    (d / f"{ts}_{slug}.{ext}").write_text(content)
+
+
+def _debug_image(debug_dir: str | None, label: str, data: bytes, ext: str = "png"):
+    d = _dump_dir(debug_dir)
+    if d:
+        dump_media(data, label, d, ext=ext)
+
+
 def _maybe_dump(data: bytes, label: str, ext: str = "png"):
     if config.screenshot_dump_dir:
         dump_media(data, label, config.screenshot_dump_dir, ext=ext)
@@ -325,6 +347,7 @@ async def navigate(
     query: str | None = None,
     scope: str | None = None,
     wait: str | None = None,
+    debug_dir: str | None = None,
     session: str = _DEFAULT_SESSION,
 ) -> str:
     """Navigate to a URL and return page content. Browser-only — requires a session, not a window.
@@ -332,15 +355,22 @@ async def navigate(
     scope: CSS selector to restrict to a page sub-tree.
     wait: "networkidle", "load", "domcontentloaded", or a CSS selector (waits for visibility, 10s timeout).
     query: when set, returns vision analysis instead of text summary.
+    debug_dir: when set, dump inputs/outputs/screenshots to this directory for debugging.
     """
+    _debug_write(debug_dir, "navigate_input", json.dumps({"url": url, "query": query, "scope": scope, "wait": wait}))
     mgr = _sessions.get(session)
     page = await mgr.get_page()
     await page.goto(url)
     await _wait(page, wait)
     state = await _capture(mgr, scope)
+    if state.screenshot_base64:
+        _debug_image(debug_dir, "navigate", base64.b64decode(state.screenshot_base64))
     if query:
-        return _session_response(session, await _analyze(state, query))
-    return _session_response(session, state.text_summary())
+        result = _session_response(session, await _analyze(state, query))
+    else:
+        result = _session_response(session, state.text_summary())
+    _debug_write(debug_dir, "navigate_output", result)
+    return result
 
 
 @mcp.tool()
@@ -349,6 +379,7 @@ async def run_actions(
     query: str | None = None,
     scope: str | None = None,
     wait: str | None = None,
+    debug_dir: str | None = None,
     window: str | None = None,
     session: str = _DEFAULT_SESSION,
 ) -> str:
@@ -374,19 +405,25 @@ async def run_actions(
     scope: CSS selector to restrict the final capture to a page sub-tree (browser only).
     wait: after all actions, wait for a condition (browser only).
     query: when set, returns vision analysis of the final state instead of text summary.
+    debug_dir: when set, dump inputs/outputs/screenshots to this directory for debugging.
     """
+    _debug_write(debug_dir, "run_actions_input", json.dumps({"actions": [a.model_dump() for a in actions], "query": query, "window": window, "session": session}))
     win, mgr, err = _resolve_target(window, session)
     if err:
         return err
     if win:
-        return await _run_actions_desktop(win, actions, query)
-    return await _run_actions_browser(mgr, actions, query, scope, wait, session)
+        result = await _run_actions_desktop(win, actions, query, debug_dir)
+    else:
+        result = await _run_actions_browser(mgr, actions, query, scope, wait, session, debug_dir)
+    _debug_write(debug_dir, "run_actions_output", result)
+    return result
 
 
 async def _run_actions_desktop(
     win: DesktopWindow,
     actions: list[AnyAction],
     query: str | None,
+    debug_dir: str | None = None,
 ) -> str:
     wid = win.wid
     label = _desktop_label(win)
@@ -538,6 +575,7 @@ async def _run_actions_desktop(
         elif isinstance(action, ScreenshotAction):
             screenshot_bytes, report = await _capture_desktop(win, action.query)
             snapshots[step_idx] = screenshot_bytes
+            _debug_image(debug_dir, f"desktop_step{step_idx}_screenshot", screenshot_bytes)
             step_reports.append(_step(i, action.type, report))
 
         elif isinstance(action, AnnotateAction):
@@ -561,6 +599,7 @@ async def _run_actions_desktop(
         if action.observe:
             obs_bytes = desktop.capture_window(wid)
             snapshots[step_idx] = obs_bytes
+            _debug_image(debug_dir, f"desktop_step{step_idx}_observe", obs_bytes)
             obs_result = await _run_observe(
                 obs_bytes, action.observe, _desktop_context(win)
             )
@@ -571,11 +610,13 @@ async def _run_actions_desktop(
     else:
         final_summary = f"{win.name} ({win.w}x{win.h})"
 
-    return (
+    report = (
         f"{label}\n"
         + "\n".join(step_reports)
         + f"\n\n---\nFinal state: {final_summary}"
     )
+    _debug_write(debug_dir, "desktop_final", report)
+    return report
 
 
 async def _run_actions_browser(
@@ -585,6 +626,7 @@ async def _run_actions_browser(
     scope: str | None,
     wait: str | None,
     session: str,
+    debug_dir: str | None = None,
 ) -> str:
     current_tab = 0
     page = await mgr.get_page(current_tab)
@@ -662,6 +704,7 @@ async def _run_actions_browser(
             else:
                 state = await _capture(mgr, action.scope, current_tab)
                 snapshots[step_idx] = base64.b64decode(state.screenshot_base64)
+                _debug_image(debug_dir, f"browser_step{step_idx}_screenshot", snapshots[step_idx])
                 if action.query:
                     report = await _analyze(state, action.query)
                 else:
@@ -688,6 +731,7 @@ async def _run_actions_browser(
         if action.observe:
             obs_bytes = await page.screenshot(type="png")
             snapshots[step_idx] = obs_bytes
+            _debug_image(debug_dir, f"browser_step{step_idx}_observe", obs_bytes)
             obs_result = await _run_observe(
                 obs_bytes, action.observe, f"Browser step {step_idx}"
             )
@@ -705,12 +749,11 @@ async def _run_actions_browser(
     else:
         final_summary = f"{final.title} — {final.url}\n{final.visible_text[:500]}"
 
-    return _session_response(
+    result = _session_response(
         session, "\n".join(step_reports) + f"\n\n---\nFinal state: {final_summary}"
     )
-
-
-@mcp.tool()
+    _debug_write(debug_dir, "browser_final", result)
+    return result
 async def screenshot(
     query: str | None = None,
     scope: str | None = None,
@@ -718,6 +761,7 @@ async def screenshot(
     element: int | None = None,
     path: str | None = None,
     return_image: bool = False,
+    debug_dir: str | None = None,
     window: str | None = None,
     session: str = _DEFAULT_SESSION,
 ):
@@ -761,6 +805,9 @@ async def screenshot(
             text = _session_response(session, await _analyze(state, query))
         else:
             text = _session_response(session, state.text_summary())
+    if img_bytes is not None:
+        _debug_image(debug_dir, "screenshot", img_bytes)
+    _debug_write(debug_dir, "screenshot_output", text if isinstance(text, str) else text[0])
     if return_image and img_bytes is not None:
         return [text, Image(data=img_bytes, format="png")]
     return text
@@ -772,6 +819,7 @@ async def get_interactive_elements(
     query: str | None = None,
     limit: int = DEFAULT_LIMIT,
     tab: int = 0,
+    debug_dir: str | None = None,
     window: str | None = None,
     session: str = _DEFAULT_SESSION,
 ) -> str:
@@ -786,16 +834,20 @@ async def get_interactive_elements(
     scope: CSS selector to restrict to a page sub-tree (browser only).
     limit: Maximum number of elements to return (browser only).
     With query, also returns a vision analysis of the annotated screenshot.
+    debug_dir: when set, dump inputs/outputs/screenshots to this directory for debugging.
     """
     win, mgr, err = _resolve_target(window, session)
     if err:
         return err
     if win:
         _, report = await _annotate_desktop(win, query)
-        return f"{_desktop_label(win)}\n{report}"
-    return _session_response(
-        session, await _annotate_and_describe(mgr, tab, scope, query, limit)
-    )
+        result = f"{_desktop_label(win)}\n{report}"
+    else:
+        result = _session_response(
+            session, await _annotate_and_describe(mgr, tab, scope, query, limit)
+        )
+    _debug_write(debug_dir, "interactive_elements", result)
+    return result
 
 
 @mcp.tool()
@@ -910,6 +962,7 @@ async def record(
     duration: float | None = None,
     fps: int | None = None,
     path: str | None = None,
+    debug_dir: str | None = None,
     window: str | None = None,
     session: str = _DEFAULT_SESSION,
 ) -> str:
@@ -924,6 +977,7 @@ async def record(
     duration: recording length in seconds (desktop only, default from config).
     fps: frames per second (desktop only, default from config).
     path: save the video file to this path.
+    debug_dir: when set, dump inputs/outputs/video to this directory for debugging.
     """
     win, mgr, err = _resolve_target(window, session)
     if err:
