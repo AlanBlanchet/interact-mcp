@@ -15,6 +15,7 @@ _DND_DISPATCH_JS = (Path(__file__).parent / "js" / "dnd_dispatch.js").read_text(
 class Action(BaseModel):
     mutates: ClassVar[bool] = True
     wait: str | None = None
+    observe: str | None = None
 
 
 class ObservationAction(Action):
@@ -237,6 +238,12 @@ class SleepAction(ObservationAction):
         return f"waited {self.duration}s"
 
 
+class CompareAction(ObservationAction):
+    type: Literal["compare"] = "compare"
+    steps: list[int]
+    query: str
+
+
 class ClickElementAction(Action):
     type: Literal["click_element"] = "click_element"
     element: int
@@ -300,7 +307,8 @@ AnyAction = Annotated[
     | HttpRequestAction
     | AnnotateAction
     | ClickElementAction
-    | SleepAction,
+    | SleepAction
+    | CompareAction,
     Field(discriminator="type"),
 ]
 

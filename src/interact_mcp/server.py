@@ -16,6 +16,7 @@ from interact_mcp.actions import (
     ClickAction,
     ClickElementAction,
     CloseTabAction,
+    CompareAction,
     DragAction,
     HoverAction,
     HttpRequestAction,
@@ -112,6 +113,30 @@ async def _vlm(
     return await analyze_media(
         [MediaItem.from_bytes(data, media_type, mime)], context, config, query
     )
+
+
+async def _run_observe(
+    screenshot_bytes: bytes, query: str, context: str,
+) -> str:
+    try:
+        return await _vlm(screenshot_bytes, context, query)
+    except Exception as e:
+        return f"observe error: {e}"
+
+
+async def _run_compare(
+    snapshots: dict[int, bytes], steps: list[int], query: str, context: str,
+) -> str:
+    missing = [s for s in steps if s not in snapshots]
+    if missing:
+        return ", ".join(
+            f"Step {s} has no snapshot — add observe to that action" for s in missing
+        )
+    try:
+        media = [MediaItem.from_bytes(snapshots[s]) for s in steps]
+        return await analyze_media(media, context, config, query)
+    except Exception as e:
+        return f"compare error: {e}"
 
 
 async def _media_response(
@@ -338,10 +363,12 @@ async def run_actions(
     Observations: screenshot, wait_for, http_request, hover, annotate
     Tab control: new_tab, switch_tab, close_tab
     Timing: sleep — pause execution for a duration (max 30s), useful for waiting on animations or delayed UI updates.
+    Comparison: compare — VLM comparison of snapshots from earlier steps (by 1-based index).
 
     Browser-only actions (navigate, evaluate_js, wait_for, upload_file, new_tab, switch_tab, close_tab) error when used with window.
 
     Any action can include 'wait' to wait after execution (networkidle, load, domcontentloaded, or a CSS selector — browser only).
+    Any action can include 'observe' (a VLM query string) to capture a screenshot after execution and analyze it. The snapshot is stored by step index for later compare actions.
 
     scope: CSS selector to restrict the final capture to a page sub-tree (browser only).
     wait: after all actions, wait for a condition (browser only).
@@ -363,11 +390,16 @@ async def _run_actions_desktop(
     wid = win.wid
     label = _desktop_label(win)
     step_reports: list[str] = []
+    snapshots: dict[int, bytes] = {}
 
     for i, action in enumerate(actions):
-        if isinstance(action, SleepAction):
-            await asyncio.sleep(action.duration)
-            step_reports.append(_step(i, action.type, f"waited {action.duration}s"))
+        step_idx = i + 1
+
+        if isinstance(action, CompareAction):
+            result = await _run_compare(
+                snapshots, action.steps, action.query, _desktop_context(win)
+            )
+            step_reports.append(_step(i, action.type, result))
             continue
 
         if action.type in BROWSER_ONLY_ACTIONS:
@@ -380,7 +412,11 @@ async def _run_actions_desktop(
             )
             continue
 
-        if isinstance(action, ClickAction):
+        if isinstance(action, SleepAction):
+            await asyncio.sleep(action.duration)
+            step_reports.append(_step(i, action.type, f"waited {action.duration}s"))
+
+        elif isinstance(action, ClickAction):
             if action.x is not None and action.y is not None:
                 await desktop.desktop_click(wid, action.x, action.y)
             elif action.ref:
@@ -499,11 +535,13 @@ async def _run_actions_desktop(
             )
 
         elif isinstance(action, ScreenshotAction):
-            _, report = await _capture_desktop(win, action.query)
+            screenshot_bytes, report = await _capture_desktop(win, action.query)
+            snapshots[step_idx] = screenshot_bytes
             step_reports.append(_step(i, action.type, report))
 
         elif isinstance(action, AnnotateAction):
             _, report = await _annotate_desktop(win, action.query)
+            snapshots[step_idx] = desktop.capture_window(wid)
             step_reports.append(_step(i, action.type, report))
 
         elif isinstance(action, HttpRequestAction):
@@ -518,6 +556,14 @@ async def _run_actions_desktop(
             )
 
         await asyncio.sleep(0.1)
+
+        if action.observe:
+            obs_bytes = desktop.capture_window(wid)
+            snapshots[step_idx] = obs_bytes
+            obs_result = await _run_observe(
+                obs_bytes, action.observe, _desktop_context(win)
+            )
+            step_reports[-1] += f"\n  observation: {obs_result}"
 
     if query:
         _, final_summary = await _capture_desktop(win, query)
@@ -543,24 +589,31 @@ async def _run_actions_browser(
     page = await mgr.get_page(current_tab)
     step_reports: list[str] = []
     final: PageState | None = None
+    snapshots: dict[int, bytes] = {}
 
     for i, action in enumerate(actions):
+        step_idx = i + 1
+
+        if isinstance(action, CompareAction):
+            ctx = f"Browser session comparison of steps {action.steps}"
+            result = await _run_compare(snapshots, action.steps, action.query, ctx)
+            step_reports.append(_step(i, action.type, result))
+            continue
+
         if isinstance(action, NewTabAction):
             idx = await mgr.new_tab(action.url)
             current_tab = idx
             page = await mgr.get_page(current_tab)
             step_reports.append(_step(i, action.type, f"opened tab {idx}"))
-            continue
 
-        if isinstance(action, SwitchTabAction):
+        elif isinstance(action, SwitchTabAction):
             current_tab = action.index
             page = await mgr.get_page(current_tab)
             step_reports.append(
                 _step(i, action.type, f"switched to tab {action.index}")
             )
-            continue
 
-        if isinstance(action, CloseTabAction):
+        elif isinstance(action, CloseTabAction):
             idx = action.index if action.index is not None else mgr.tab_count - 1
             await mgr.close_tab(idx)
             step_reports.append(_step(i, action.type, f"closed tab {idx}"))
@@ -569,17 +622,16 @@ async def _run_actions_browser(
                 page = await mgr.get_page(current_tab)
             elif idx < current_tab:
                 current_tab -= 1
-            continue
 
-        if isinstance(action, AnnotateAction):
+        elif isinstance(action, AnnotateAction):
             report = await _annotate_and_describe(
                 mgr, current_tab, action.scope, action.query, action.limit
             )
             step_reports.append(_step(i, action.type, report))
             final = await _capture(mgr, scope=action.scope, tab=current_tab)
-            continue
+            snapshots[step_idx] = base64.b64decode(final.screenshot_base64)
 
-        if isinstance(action, ClickElementAction):
+        elif isinstance(action, ClickElementAction):
             el = mgr.get_element(action.element, current_tab)
             if el is None:
                 step_reports.append(
@@ -589,49 +641,56 @@ async def _run_actions_browser(
                         f"Element {action.element} not found — run annotate first",
                     )
                 )
-                continue
-            before = await _capture(mgr, tab=current_tab)
-            if el.ref:
-                await page.locator(el.playwright_ref).click()
             else:
-                await page.mouse.click(el.center_x, el.center_y)
-            if action.wait:
-                await _wait(page, action.wait)
-            final = await _capture(mgr, tab=current_tab)
-            change = StateChange.compute(before, final)
-            step_reports.append(_step(i, action.type, change.description))
-            continue
+                before = await _capture(mgr, tab=current_tab)
+                if el.ref:
+                    await page.locator(el.playwright_ref).click()
+                else:
+                    await page.mouse.click(el.center_x, el.center_y)
+                if action.wait:
+                    await _wait(page, action.wait)
+                final = await _capture(mgr, tab=current_tab)
+                change = StateChange.compute(before, final)
+                step_reports.append(_step(i, action.type, change.description))
 
-        if isinstance(action, ScreenshotAction):
+        elif isinstance(action, ScreenshotAction):
             if action.element is not None or action.selector is not None:
                 report = await _element_screenshot(
                     mgr, current_tab, action.selector, action.element, action.query
                 )
             else:
                 state = await _capture(mgr, action.scope, current_tab)
+                snapshots[step_idx] = base64.b64decode(state.screenshot_base64)
                 if action.query:
                     report = await _analyze(state, action.query)
                 else:
                     report = f"{state.title} — {state.visible_text[:300]}"
                 final = state
             step_reports.append(_step(i, action.type, report))
-            continue
 
-        if not action.mutates:
+        elif not action.mutates:
             result = await action.execute(page)
             step_reports.append(_step(i, action.type, str(result)))
-            continue
 
-        before = await _capture(mgr, tab=current_tab)
-        result = await action.execute(page)
-        if action.wait:
-            await _wait(page, action.wait)
-        final = await _capture(mgr, tab=current_tab)
-        change = StateChange.compute(before, final)
-        entry = _step(i, action.type, change.description)
-        if result is not None:
-            entry += f"\n  result: {result}"
-        step_reports.append(entry)
+        else:
+            before = await _capture(mgr, tab=current_tab)
+            result = await action.execute(page)
+            if action.wait:
+                await _wait(page, action.wait)
+            final = await _capture(mgr, tab=current_tab)
+            change = StateChange.compute(before, final)
+            entry = _step(i, action.type, change.description)
+            if result is not None:
+                entry += f"\n  result: {result}"
+            step_reports.append(entry)
+
+        if action.observe:
+            obs_bytes = await page.screenshot(type="png")
+            snapshots[step_idx] = obs_bytes
+            obs_result = await _run_observe(
+                obs_bytes, action.observe, f"Browser step {step_idx}"
+            )
+            step_reports[-1] += f"\n  observation: {obs_result}"
 
     if final is None:
         final = await _capture(mgr, scope, current_tab)

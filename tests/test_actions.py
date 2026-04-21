@@ -8,6 +8,7 @@ from interact_mcp.actions import (
     ClickAction,
     ClickElementAction,
     CloseTabAction,
+    CompareAction,
     DragAction,
     EvaluateJsAction,
     HoverAction,
@@ -109,9 +110,10 @@ def test_discriminated_union_from_dict():
         {"type": "annotate"},
         {"type": "click_element", "element": 3},
         {"type": "key_press", "key": "Enter"},
+        {"type": "compare", "steps": [1, 2], "query": "diff?"},
     ]
     actions = adapter.validate_python(raw)
-    assert len(actions) == 17
+    assert len(actions) == 18
     expected_types = [
         ClickAction,
         HoverAction,
@@ -130,6 +132,7 @@ def test_discriminated_union_from_dict():
         AnnotateAction,
         ClickElementAction,
         KeyPressAction,
+        CompareAction,
     ]
     for action, expected in zip(actions, expected_types):
         assert isinstance(action, expected)
@@ -154,6 +157,7 @@ def test_mutates_flag():
     assert AnnotateAction().mutates is False
     assert ClickElementAction(element=1).mutates is True
     assert KeyPressAction(key="Enter").mutates is True
+    assert CompareAction(steps=[1], query="q").mutates is False
 
 
 def test_unknown_type_rejected():
@@ -246,6 +250,22 @@ def test_screenshot_defaults():
     assert action.query is None
     assert action.selector is None
     assert action.element is None
+    assert action.mutates is False
+    assert action.observe is None
+
+
+def test_observe_field_on_action():
+    action = ScrollAction(observe="what changed?")
+    assert action.observe == "what changed?"
+    action2 = ClickAction(selector="#btn", observe=None)
+    assert action2.observe is None
+
+
+def test_compare_action():
+    action = CompareAction(steps=[1, 3], query="diff?")
+    assert action.type == "compare"
+    assert action.steps == [1, 3]
+    assert action.query == "diff?"
     assert action.mutates is False
 
 
